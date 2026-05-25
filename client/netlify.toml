@@ -1,0 +1,9 @@
+# Admin SPA — use with Netlify Base directory: pizzerio-bites/client
+[build]
+  command = "npm install && npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
