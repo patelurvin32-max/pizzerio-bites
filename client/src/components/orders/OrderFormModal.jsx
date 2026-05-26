@@ -7,7 +7,7 @@ import Select from '../common/Select.jsx'
 import Loader from '../common/Loader.jsx'
 import { menuService } from '../../services/menuService.js'
 import { orderService } from '../../services/orderService.js'
-import { ORDER_STATUS_OPTIONS, PAYMENT_STATUS_OPTIONS } from '../../utils/constants.js'
+import { PAYMENT_STATUS_OPTIONS } from '../../utils/constants.js'
 import { cn, formatCurrency } from '../../utils/helpers.js'
 import {
   buildOrderLineName,
@@ -80,7 +80,7 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
     setCart([])
     setPicker(emptyPicker)
     setLoadingMenu(true)
-    Promise.all([menuService.categories(), menuService.items()])
+    Promise.all([menuService.publicCategories(), menuService.publicItems()])
       .then(([catRes, itemRes]) => {
         const cats = (catRes.items || []).filter((c) => c.active !== false).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         const items = (itemRes.items || []).filter((m) => m.available !== false)
@@ -250,13 +250,13 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
               value={form.customerEmail}
               onChange={(e) => setForm({ ...form, customerEmail: e.target.value })}
             />
-            <Input
+            {/* <Input
               label="Delivery address"
               value={form.deliveryAddress}
               onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
               placeholder="Optional — dine-in leave blank"
               className="md:col-span-2"
-            />
+            /> */}
           </div>
         </section>
 
@@ -429,13 +429,6 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
         <section className="space-y-3">
           <SectionTitle>Order details</SectionTitle>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Select label="Order status" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-              {ORDER_STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </Select>
             <Select
               label="Payment status"
               value={form.paymentStatus}
@@ -453,10 +446,10 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
               onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
               className="md:col-span-2"
             >
-              <option value="card">Card</option>
+              {/* <option value="card">Card</option> */}
               <option value="cash">Cash</option>
               <option value="online">Online</option>
-              <option value="wallet">Wallet</option>
+              {/* <option value="wallet">Wallet</option> */}
             </Select>
             <Input
               label="Notes"
@@ -468,9 +461,9 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
           </div>
         </section>
 
-        <p className="hidden text-center text-xs text-nb-gray sm:block">
+        {/* <p className="hidden text-center text-xs text-nb-gray sm:block">
           Prices include tax. Subtotal is shown above the action buttons.
-        </p>
+        </p> */}
       </div>
     </Modal>
   )

@@ -7,8 +7,6 @@ import DashboardLayout from '../components/layout/DashboardLayout.jsx'
 import { ROLES } from '../utils/constants.js'
 
 const Login = lazy(() => import('../pages/auth/Login.jsx'))
-const ForgotPassword = lazy(() => import('../pages/auth/ForgotPassword.jsx'))
-const ResetPassword = lazy(() => import('../pages/auth/ResetPassword.jsx'))
 
 const Dashboard = lazy(() => import('../pages/dashboard/Dashboard.jsx'))
 const Users = lazy(() => import('../pages/dashboard/Users.jsx'))
@@ -27,7 +25,9 @@ const CMS = lazy(() => import('../pages/dashboard/CMS.jsx'))
 const Inventory = lazy(() => import('../pages/dashboard/Inventory.jsx'))
 
 const mgmt = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER]
+const mgmtReception = [...mgmt, ROLES.RECEPTION]
 const adminUp = [ROLES.SUPER_ADMIN, ROLES.ADMIN]
+const staffContent = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF]
 
 function SuspensePage({ children }) {
   return <Suspense fallback={<Loader label="Loading module" />}>{children}</Suspense>
@@ -44,23 +44,6 @@ export default function AppRoutes() {
           </SuspensePage>
         }
       />
-      <Route
-        path="/forgot-password"
-        element={
-          <SuspensePage>
-            <ForgotPassword />
-          </SuspensePage>
-        }
-      />
-      <Route
-        path="/reset-password"
-        element={
-          <SuspensePage>
-            <ResetPassword />
-          </SuspensePage>
-        }
-      />
-
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
           <Route
@@ -83,7 +66,9 @@ export default function AppRoutes() {
             path="/dashboard/reservations"
             element={
               <SuspensePage>
-                <Reservations />
+                <RoleRoute roles={staffContent}>
+                  <Reservations />
+                </RoleRoute>
               </SuspensePage>
             }
           />
@@ -91,7 +76,9 @@ export default function AppRoutes() {
             path="/dashboard/messages"
             element={
               <SuspensePage>
-                <Messages />
+                <RoleRoute roles={staffContent}>
+                  <Messages />
+                </RoleRoute>
               </SuspensePage>
             }
           />
@@ -99,7 +86,9 @@ export default function AppRoutes() {
             path="/dashboard/gallery"
             element={
               <SuspensePage>
-                <Gallery />
+                <RoleRoute roles={staffContent}>
+                  <Gallery />
+                </RoleRoute>
               </SuspensePage>
             }
           />
@@ -107,7 +96,9 @@ export default function AppRoutes() {
             path="/dashboard/reviews"
             element={
               <SuspensePage>
-                <Reviews />
+                <RoleRoute roles={staffContent}>
+                  <Reviews />
+                </RoleRoute>
               </SuspensePage>
             }
           />
@@ -165,7 +156,7 @@ export default function AppRoutes() {
             path="/dashboard/inventory"
             element={
               <SuspensePage>
-                <RoleRoute roles={mgmt}>
+                <RoleRoute roles={mgmtReception}>
                   <Inventory />
                 </RoleRoute>
               </SuspensePage>

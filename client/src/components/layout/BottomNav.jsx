@@ -3,7 +3,7 @@ import { NAV_ITEMS, canAccessNav } from '../../utils/constants.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { cn } from '../../utils/helpers.js'
 
-const MOBILE_SHORTLIST = ['/dashboard', '/dashboard/orders', '/dashboard/reservations', '/dashboard/menu', '/dashboard/settings']
+const MOBILE_SHORTLIST = ['/dashboard', '/dashboard/orders', '/dashboard/inventory', '/dashboard/reservations', '/dashboard/menu', '/dashboard/settings']
 
 export default function BottomNav() {
   const { user } = useAuth()

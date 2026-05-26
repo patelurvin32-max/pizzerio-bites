@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import app from './app.js'
 import { connectDB } from './config/db.js'
 import { ensureDefaultCategories, ensureDefaultMenuItems } from './utils/ensureDefaults.js'
+import { ensureSequentialOrderNumbers } from './utils/orderNumbers.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.join(__dirname, '../.env') })
@@ -23,6 +24,11 @@ if (!process.env.JWT_SECRET) {
 
 await connectDB(MONGODB_URI)
 console.log('MongoDB connected')
+
+const orderNumberMigration = await ensureSequentialOrderNumbers()
+if (orderNumberMigration.updated) {
+  console.log(`Order numbers migrated (${orderNumberMigration.updated} updated)`)
+}
 
 const seedDefaults =
   process.env.ENABLE_DEFAULT_SEED === 'true' || process.env.NODE_ENV !== 'production'

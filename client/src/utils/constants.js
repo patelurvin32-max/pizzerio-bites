@@ -2,7 +2,6 @@ import {
   FiActivity,
   FiBarChart2,
   FiCoffee,
-  FiGrid,
   FiImage,
   FiLayers,
   FiLayout,
@@ -117,21 +116,23 @@ export const RESERVATION_TIME_SLOTS = [
 
 const all = Object.values(ROLES)
 const mgmt = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER]
+const mgmtReception = [...mgmt, ROLES.RECEPTION]
 const adminUp = [ROLES.SUPER_ADMIN, ROLES.ADMIN]
+const staffContent = all.filter((r) => ![ROLES.DELIVERY_STAFF, ROLES.RECEPTION].includes(r))
 
 export const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: FiActivity, minRoles: all },
   { to: '/dashboard/orders', label: 'Orders', icon: FiShoppingBag, minRoles: all },
-  { to: '/dashboard/reservations', label: 'Reservations', icon: FiCalendar, minRoles: all.filter((r) => r !== ROLES.DELIVERY_STAFF) },
+  { to: '/dashboard/reservations', label: 'Reservations', icon: FiCalendar, minRoles: staffContent },
   { to: '/dashboard/menu', label: 'Menu', icon: FiCoffee, minRoles: mgmt },
   { to: '/dashboard/categories', label: 'Categories', icon: FiLayers, minRoles: mgmt },
   { to: '/dashboard/offers', label: 'Offers', icon: FiPercent, minRoles: mgmt },
-  { to: '/dashboard/gallery', label: 'Gallery', icon: FiImage, minRoles: all.filter((r) => r !== ROLES.DELIVERY_STAFF) },
-  { to: '/dashboard/reviews', label: 'Reviews', icon: FiStar, minRoles: all.filter((r) => r !== ROLES.DELIVERY_STAFF) },
-  { to: '/dashboard/messages', label: 'Messages', icon: FiMail, minRoles: all.filter((r) => r !== ROLES.DELIVERY_STAFF) },
+  { to: '/dashboard/gallery', label: 'Gallery', icon: FiImage, minRoles: staffContent },
+  { to: '/dashboard/reviews', label: 'Reviews', icon: FiStar, minRoles: staffContent },
+  { to: '/dashboard/messages', label: 'Messages', icon: FiMail, minRoles: staffContent },
   { to: '/dashboard/users', label: 'Users', icon: FiUsers, minRoles: adminUp },
   { to: '/dashboard/staff', label: 'Staff', icon: FiUserCheck, minRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER] },
-  { to: '/dashboard/inventory', label: 'Inventory', icon: FiPackage, minRoles: mgmt },
+  { to: '/dashboard/inventory', label: 'Inventory', icon: FiPackage, minRoles: mgmtReception },
   { to: '/dashboard/analytics', label: 'Analytics', icon: FiBarChart2, minRoles: mgmt },
   { to: '/dashboard/cms', label: 'CMS', icon: FiLayout, minRoles: mgmt },
   { to: '/dashboard/settings', label: 'Settings', icon: FiSettings, minRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER] },

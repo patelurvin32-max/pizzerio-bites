@@ -33,9 +33,7 @@ api.interceptors.response.use(
     const original = err.config
     const isAuthRoute =
       original?.url?.includes('/api/auth/login') ||
-      original?.url?.includes('/api/auth/refresh') ||
-      original?.url?.includes('/api/auth/forgot-password') ||
-      original?.url?.includes('/api/auth/reset-password')
+      original?.url?.includes('/api/auth/refresh')
 
     if (err.response?.status === 401 && original && !original._retry && !isAuthRoute) {
       original._retry = true

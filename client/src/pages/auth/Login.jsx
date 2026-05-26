@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import gsap from 'gsap'
 import Button from '../../components/common/Button.jsx'
 import Input from '../../components/common/Input.jsx'
+import PasswordInput from '../../components/common/PasswordInput.jsx'
 import Card from '../../components/common/Card.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useNotify } from '../../context/NotificationContext.jsx'
@@ -56,16 +57,11 @@ export default function Login() {
           <p className="mt-1 text-sm text-nb-gray">Use your Pizzerio Bites operator credentials.</p>
           <form className="mt-6 space-y-4" onSubmit={onSubmit}>
             <Input label="Email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <Input label="Password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <PasswordInput label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             <Button type="submit" className="w-full" disabled={busy}>
               {busy ? 'Signing in…' : 'Login'}
             </Button>
           </form>
-          <p className="mt-4 text-center text-sm text-nb-gray">
-            <Link className="text-nb-neon-orange hover:underline" to="/forgot-password">
-              Forgot password?
-            </Link>
-          </p>
         </Card>
         {/* <p className="mt-6 text-center text-xs text-nb-gray">Secured with JWT · encrypted sessions · rate limited</p> */}
       </motion.div>

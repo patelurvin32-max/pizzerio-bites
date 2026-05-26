@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { nanoid } from 'nanoid'
+import Counter from './Counter.js'
 
 const orderLineSchema = new mongoose.Schema(
   {
@@ -41,8 +41,18 @@ const orderSchema = new mongoose.Schema(
 
 orderSchema.pre('save', async function genOrderNumber(next) {
   if (this.orderNumber) return next()
-  this.orderNumber = `NB-${nanoid(8).toUpperCase()}`
-  next()
+  try {
+    const year = new Date().getFullYear()
+    const counter = await Counter.findOneAndUpdate(
+      { key: `order-${year}` },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    )
+    this.orderNumber = `${year}/${String(counter.seq).padStart(5, '0')}`
+    next()
+  } catch (error) {
+    next(error)
+  }
 })
 
 export default mongoose.models.Order || mongoose.model('Order', orderSchema)

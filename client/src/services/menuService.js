@@ -1,6 +1,12 @@
 import api from './api.js'
 
 export const menuService = {
+  publicCategories() {
+    return api.get('/api/menu/public/categories').then((r) => r.data)
+  },
+  publicItems(params) {
+    return api.get('/api/menu/public/items', { params }).then((r) => r.data)
+  },
   categories() {
     return api.get('/api/menu/categories').then((r) => r.data)
   },

@@ -13,6 +13,8 @@ import { cn, formatCurrency, formatDate } from '../../utils/helpers.js'
 import { useNotify } from '../../context/NotificationContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 
+const PAYMENT_METHOD_OPTIONS = ['cash', 'online', 'card', 'wallet']
+
 function OrderCard({ order, onPatch, onInvoice }) {
   return (
     <article className="rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -162,8 +164,8 @@ export default function Orders() {
                     <Th>Order</Th>
                     <Th>Customer</Th>
                     <Th>Total</Th>
-                    <Th>Status</Th>
-                    <Th>Payment</Th>
+                    <Th>Payment status</Th>
+                    <Th>Payment method</Th>
                     <Th>Created</Th>
                     <Th className="text-right">Actions</Th>
                   </tr>
@@ -178,19 +180,6 @@ export default function Orders() {
                       </Td>
                       <Td>
                         <Select
-                          value={o.status}
-                          onChange={(e) => patch(o._id, { status: e.target.value })}
-                          className="!min-h-[40px] !py-2 text-xs"
-                        >
-                          {ORDER_STATUS_OPTIONS.map((s) => (
-                            <option key={s} value={s}>
-                              {s.replaceAll('_', ' ')}
-                            </option>
-                          ))}
-                        </Select>
-                      </Td>
-                      <Td>
-                        <Select
                           value={o.paymentStatus}
                           onChange={(e) => patch(o._id, { paymentStatus: e.target.value })}
                           className="!min-h-[40px] !py-2 text-xs"
@@ -198,6 +187,19 @@ export default function Orders() {
                           {PAYMENT_STATUS_OPTIONS.map((s) => (
                             <option key={s} value={s}>
                               {s}
+                            </option>
+                          ))}
+                        </Select>
+                      </Td>
+                      <Td>
+                        <Select
+                          value={o.paymentMethod || 'card'}
+                          onChange={(e) => patch(o._id, { paymentMethod: e.target.value })}
+                          className="!min-h-[40px] !py-2 text-xs"
+                        >
+                          {PAYMENT_METHOD_OPTIONS.map((method) => (
+                            <option key={method} value={method}>
+                              {method}
                             </option>
                           ))}
                         </Select>

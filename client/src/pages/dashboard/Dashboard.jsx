@@ -20,9 +20,12 @@ import Button from '../../components/common/Button.jsx'
 import StatCard from '../../components/dashboard/StatCard.jsx'
 import SalesAreaChart from '../../components/dashboard/SalesAreaChart.jsx'
 import OrdersBarChart from '../../components/dashboard/OrdersBarChart.jsx'
+import { ROLES } from '../../utils/constants.js'
 import { formatCurrency } from '../../utils/helpers.js'
 
 function OperationsDashboard() {
+  const { user } = useAuth()
+  const isReception = user?.role === ROLES.RECEPTION
   const { data, loading, error } = useFetch(
     () => api.get('/api/analytics/operations').then((r) => r.data),
     []
@@ -42,33 +45,48 @@ function OperationsDashboard() {
       <motion.div>
         <h1 className="font-heading text-2xl font-bold text-nb-white sm:text-3xl">Front desk overview</h1>
         <p className="text-sm text-nb-gray">
-          Today&apos;s guests, orders, and inbox — reservations & messages at a glance.
+          {isReception
+            ? 'Today\'s orders and inventory access at a glance.'
+            : 'Today\'s guests, orders, and inbox - reservations & messages at a glance.'}
         </p>
       </motion.div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Orders today" value={data.ordersToday} icon={FiShoppingBag} delay={0.02} />
-        <StatCard label="Pending reservations" value={data.reservationsPending} icon={FiCalendar} delay={0.06} />
+        {!isReception && (
+          <StatCard label="Pending reservations" value={data.reservationsPending} icon={FiCalendar} delay={0.06} />
+        )}
         <StatCard label="Pending orders" value={data.ordersPending} icon={FiPackage} delay={0.1} />
-        <StatCard label="Unread messages" value={data.unreadMessages} icon={FiMail} delay={0.14} />
+        {!isReception && <StatCard label="Unread messages" value={data.unreadMessages} icon={FiMail} delay={0.14} />}
       </div>
 
       <Card glow className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-nb-gray">Jump to the modules you use most on reception.</p>
         <div className="flex flex-wrap gap-2">
-          <Link to="/dashboard/reservations">
-            <Button size="sm">Reservations</Button>
-          </Link>
-          <Link to="/dashboard/messages">
-            <Button size="sm" variant="ghost">
-              Messages
-            </Button>
-          </Link>
+          {!isReception && (
+            <>
+              <Link to="/dashboard/reservations">
+                <Button size="sm">Reservations</Button>
+              </Link>
+              <Link to="/dashboard/messages">
+                <Button size="sm" variant="ghost">
+                  Messages
+                </Button>
+              </Link>
+            </>
+          )}
           <Link to="/dashboard/orders">
-            <Button size="sm" variant="ghost">
+            <Button size="sm" variant={isReception ? undefined : 'ghost'}>
               Orders
             </Button>
           </Link>
+          {isReception && (
+            <Link to="/dashboard/inventory">
+              <Button size="sm" variant="ghost">
+                Inventory
+              </Button>
+            </Link>
+          )}
         </div>
       </Card>
     </motion.div>

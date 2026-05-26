@@ -20,16 +20,6 @@ export async function me() {
   return data
 }
 
-export async function forgotPassword(email) {
-  const { data } = await api.post('/api/auth/forgot-password', { email })
-  return data
-}
-
-export async function resetPassword(body) {
-  const { data } = await api.post('/api/auth/reset-password', body)
-  return data
-}
-
 export async function fetchRolePermissions() {
   const { data } = await api.get('/api/roles/me')
   return data

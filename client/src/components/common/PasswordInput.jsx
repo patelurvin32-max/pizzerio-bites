@@ -26,7 +26,6 @@ export default function PasswordInput({
 
   const inputClassName = cn(
     'w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 pr-10 text-sm text-nb-white caret-nb-neon-orange outline-none transition placeholder:text-nb-gray/60 focus:border-nb-neon-orange/60 focus:ring-2 focus:ring-nb-neon-orange/25',
-    !visible && 'password-mask',
     error && 'border-nb-neon-red/60',
     className
   )
@@ -42,7 +41,7 @@ export default function PasswordInput({
         <input
           id={inputId}
           name={name}
-          type="text"
+          type={visible ? 'text' : 'password'}
           className={inputClassName}
           value={value}
           onChange={onChange}
@@ -57,7 +56,6 @@ export default function PasswordInput({
         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1.5">
           <button
             type="button"
-            tabIndex={-1}
             className="pointer-events-auto rounded-lg p-1.5 text-nb-gray transition hover:bg-white/10 hover:text-nb-white focus:outline-none focus-visible:ring-2 focus-visible:ring-nb-neon-orange/40"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setVisible((v) => !v)}

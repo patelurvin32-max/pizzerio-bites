@@ -1,8 +1,6 @@
-import crypto from 'crypto'
 import User from '../models/User.js'
 import { signToken } from '../utils/token.js'
 import { asyncHandler } from '../utils/asyncHandler.js'
-import { validatePassword } from '../utils/passwordPolicy.js'
 import {
   REFRESH_COOKIE,
   generateRefreshToken,
@@ -106,44 +104,4 @@ export const me = asyncHandler(async (req, res) => {
     phone: user.phone,
     lastLogin: user.lastLogin,
   })
-})
-
-export const forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body
-  if (!email) return res.status(400).json({ message: 'Email required' })
-  const user = await User.findOne({ email: email.toLowerCase() }).select('+resetPasswordToken +resetPasswordExpires')
-  if (!user) {
-    return res.json({ message: 'If an account exists, reset instructions were sent.' })
-  }
-  const raw = crypto.randomBytes(32).toString('hex')
-  user.resetPasswordToken = crypto.createHash('sha256').update(raw).digest('hex')
-  user.resetPasswordExpires = Date.now() + 1000 * 60 * 60
-  await user.save()
-  const clientBase = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].trim()
-  const resetUrl = `${clientBase}/reset-password?token=${raw}`
-  if (process.env.NODE_ENV !== 'production') {
-    console.info('[dev] password reset URL:', resetUrl)
-  }
-  res.json({ message: 'If an account exists, reset instructions were sent.' })
-})
-
-export const resetPassword = asyncHandler(async (req, res) => {
-  const { token, password } = req.body
-  if (!token) return res.status(400).json({ message: 'Valid token required' })
-  const policy = validatePassword(password)
-  if (!policy.ok) return res.status(400).json({ message: policy.message })
-  const hashed = crypto.createHash('sha256').update(token).digest('hex')
-  const user = await User.findOne({
-    resetPasswordToken: hashed,
-    resetPasswordExpires: { $gt: Date.now() },
-  }).select('+resetPasswordToken +resetPasswordExpires +password')
-  if (!user) return res.status(400).json({ message: 'Invalid or expired token' })
-  user.password = password
-  user.resetPasswordToken = undefined
-  user.resetPasswordExpires = undefined
-  user.tokenVersion = (user.tokenVersion || 0) + 1
-  user.refreshTokenHash = ''
-  user.refreshTokenExpires = undefined
-  await user.save()
-  res.json({ message: 'Password updated. You can sign in.' })
 })

@@ -19,8 +19,6 @@ const userSchema = new mongoose.Schema(
     tokenVersion: { type: Number, default: 0 },
     refreshTokenHash: { type: String, select: false, default: '' },
     refreshTokenExpires: { type: Date, select: false },
-    resetPasswordToken: { type: String, select: false },
-    resetPasswordExpires: { type: Date, select: false },
   },
   { timestamps: true }
 )
