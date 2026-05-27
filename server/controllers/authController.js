@@ -19,10 +19,21 @@ function issueAccessToken(user) {
   return signToken(accessPayload(user), process.env.JWT_SECRET, ACCESS_EXPIRES)
 }
 
-async function persistRefreshToken(user, rawRefresh) {
-  user.refreshTokenHash = hashRefreshToken(rawRefresh)
-  user.refreshTokenExpires = refreshExpiresAt()
-  await user.save()
+async function persistRefreshToken(user, rawRefresh, extraFields = {}) {
+  const refreshTokenHash = hashRefreshToken(rawRefresh)
+  const refreshTokenExpires = refreshExpiresAt()
+  await User.updateOne(
+    { _id: user._id },
+    {
+      $set: {
+        refreshTokenHash,
+        refreshTokenExpires,
+        ...extraFields,
+      },
+    }
+  )
+  user.refreshTokenHash = refreshTokenHash
+  user.refreshTokenExpires = refreshTokenExpires
 }
 
 function setRefreshCookie(res, rawRefresh) {
@@ -53,9 +64,8 @@ export const login = asyncHandler(async (req, res) => {
   const ok = await user.comparePassword(password)
   if (!ok) return res.status(401).json({ message: 'Invalid credentials' })
   if (user.status !== 'active') return res.status(403).json({ message: 'Account is not active' })
-  user.lastLogin = new Date()
   const rawRefresh = generateRefreshToken()
-  await persistRefreshToken(user, rawRefresh)
+  await persistRefreshToken(user, rawRefresh, { lastLogin: new Date() })
   setRefreshCookie(res, rawRefresh)
   res.json({
     token: issueAccessToken(user),

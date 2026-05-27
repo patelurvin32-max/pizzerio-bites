@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FiPlus, FiRefreshCw } from 'react-icons/fi'
 import Card from '../../components/common/Card.jsx'
 import Button from '../../components/common/Button.jsx'
@@ -14,6 +14,7 @@ import { useNotify } from '../../context/NotificationContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 
 const PAYMENT_METHOD_OPTIONS = ['cash', 'online', 'card', 'wallet']
+const PAGE_LENGTH_OPTIONS = [10, 25, 50, 100]
 
 function OrderCard({ order, onPatch, onInvoice }) {
   return (
@@ -62,27 +63,44 @@ function OrderCard({ order, onPatch, onInvoice }) {
 export default function Orders() {
   const notify = useNotify()
   const { user } = useAuth()
-  const [filter, setFilter] = useState('')
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [pageLength, setPageLength] = useState(10)
+  const [page, setPage] = useState(1)
   const showCreate = canCreateOrder(user?.role)
+  const totalPages = Math.max(1, Math.ceil(items.length / pageLength))
+  const currentPage = Math.min(page, totalPages)
+  const pagedItems = useMemo(() => {
+    const start = (currentPage - 1) * pageLength
+    return items.slice(start, start + pageLength)
+  }, [items, currentPage, pageLength])
+  const pageStart = items.length ? (currentPage - 1) * pageLength + 1 : 0
+  const pageEnd = Math.min(currentPage * pageLength, items.length)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await orderService.list(filter ? { status: filter } : {})
+      const data = await orderService.list()
       setItems(data.items)
     } catch (e) {
       notify.error(e.message)
     } finally {
       setLoading(false)
     }
-  }, [filter, notify])
+  }, [notify])
 
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    setPage(1)
+  }, [pageLength])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   async function patch(id, body) {
     try {
@@ -119,23 +137,22 @@ export default function Orders() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto] lg:items-end">
-          <Select label="Status filter" value={filter} onChange={(e) => setFilter(e.target.value)} className="min-w-0">
-            <option value="">All</option>
-            {ORDER_STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[auto_1fr] lg:items-end">
+          <Select label="Page length" value={pageLength} onChange={(e) => setPageLength(Number(e.target.value))} className="min-w-0 sm:max-w-[140px]">
+            {PAGE_LENGTH_OPTIONS.map((length) => (
+              <option key={length} value={length}>
+                {length}
               </option>
             ))}
           </Select>
-          <div className={cn('grid gap-2', showCreate ? 'grid-cols-1 min-[400px]:grid-cols-2 lg:flex' : 'grid-cols-1')}>
+          <div className={cn('grid gap-2 sm:col-span-1 lg:justify-self-end', showCreate ? 'grid-cols-1 min-[420px]:grid-cols-2 lg:flex' : 'grid-cols-1')}>
             {showCreate && (
-              <Button size="lg" fullWidth onClick={() => setCreateOpen(true)} className="!min-h-[52px]">
+              <Button size="lg" fullWidth onClick={() => setCreateOpen(true)} className="!min-h-[52px] lg:!min-w-[170px]">
                 <FiPlus className="h-5 w-5 shrink-0" aria-hidden />
                 New order
               </Button>
             )}
-            <Button variant="ghost" size="lg" fullWidth onClick={load} className="hidden lg:inline-flex">
+            <Button variant="ghost" size="lg" fullWidth onClick={load} className="hidden lg:inline-flex lg:!min-w-[140px]">
               Refresh
             </Button>
           </div>
@@ -151,7 +168,7 @@ export default function Orders() {
           <>
             {/* Mobile & tablet cards */}
             <div className="space-y-3 md:hidden">
-              {items.map((o) => (
+              {pagedItems.map((o) => (
                 <OrderCard key={o._id} order={o} onPatch={patch} onInvoice={invoice} />
               ))}
             </div>
@@ -171,7 +188,7 @@ export default function Orders() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((o) => (
+                  {pagedItems.map((o) => (
                     <Tr key={o._id}>
                       <Td className="font-mono text-xs text-nb-gold">{o.orderNumber}</Td>
                       <Td>{o.customerName}</Td>
@@ -214,6 +231,22 @@ export default function Orders() {
                   ))}
                 </tbody>
               </Table>
+            </div>
+            <div className="mt-4 flex flex-col gap-3 text-sm text-nb-gray sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Showing {pageStart}-{pageEnd} of {items.length}
+              </span>
+              <div className="flex items-center justify-between gap-4 sm:justify-end">
+                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={currentPage <= 1} onClick={() => setPage((p) => p - 1)}>
+                  Previous
+                </button>
+                <span>
+                  Page {currentPage} / {totalPages}
+                </span>
+                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={currentPage >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                  Next
+                </button>
+              </div>
             </div>
           </>
         )}

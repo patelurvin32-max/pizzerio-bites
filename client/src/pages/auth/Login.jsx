@@ -53,8 +53,8 @@ export default function Login() {
           {/* <p className="nb-login-hero mt-1 text-sm text-nb-gray">Premium admin access · role-secured</p> */}
         </div>
         <Card glow className="p-6 sm:p-8">
-          <h1 className="font-heading text-xl font-bold text-nb-white">Sign in</h1>
-          <p className="mt-1 text-sm text-nb-gray">Use your Pizzerio Bites operator credentials.</p>
+          <h1 className="text-center font-heading text-xl font-bold text-nb-white">Sign in</h1>
+          {/* <p className="mt-1 text-sm text-nb-gray">Use your Pizzerio Bites operator credentials.</p> */}
           <form className="mt-6 space-y-4" onSubmit={onSubmit}>
             <Input label="Email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <PasswordInput label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
