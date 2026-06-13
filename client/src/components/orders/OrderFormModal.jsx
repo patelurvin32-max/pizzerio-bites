@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FiMinus, FiPlus, FiTrash2 } from 'react-icons/fi'
+import { FiImage, FiInfo, FiMinus, FiPlus, FiShoppingCart, FiTrash2 } from 'react-icons/fi'
 import Modal from '../common/Modal.jsx'
 import Button from '../common/Button.jsx'
 import Input from '../common/Input.jsx'
@@ -46,22 +46,10 @@ function SectionTitle({ children }) {
   return <h3 className="text-xs font-semibold uppercase tracking-wide text-nb-gray">{children}</h3>
 }
 
-function VariantOption({ active, onClick, title, price }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'touch-manipulation flex min-h-[52px] flex-col items-start justify-center rounded-xl border px-3 py-2.5 text-left transition active:scale-[0.98]',
-        active
-          ? 'border-nb-neon-orange/70 bg-nb-neon-orange/15 ring-2 ring-nb-neon-orange/30'
-          : 'border-white/10 bg-black/25 hover:bg-white/5'
-      )}
-    >
-      <span className="text-sm font-medium text-nb-white">{title}</span>
-      <span className="text-xs text-nb-gold">{price}</span>
-    </button>
-  )
+function getCartQty(cart, itemId) {
+  return cart
+    .filter((line) => line.menuItem === itemId)
+    .reduce((sum, line) => sum + (Number(line.quantity) || 0), 0)
 }
 
 export default function OrderFormModal({ open, onClose, onSaved }) {
@@ -73,6 +61,7 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
   const [menuItems, setMenuItems] = useState([])
   const [loadingMenu, setLoadingMenu] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [variantSheet, setVariantSheet] = useState(null)
 
   useEffect(() => {
     if (!open) return undefined
@@ -107,12 +96,6 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
     [menuItems, picker.menuItemId]
   )
 
-  const dualPricing = selectedItem && categoryHasDualPricing(selectedItem.category)
-  const variantLabel = getVariantLabel(selectedItem?.category)
-
-  const previewName = selectedItem ? buildOrderLineName(selectedItem, picker.variant) : ''
-  const previewPrice = selectedItem ? getItemUnitPrice(selectedItem, picker.variant) : 0
-
   const subtotal = useMemo(
     () => cart.reduce((sum, line) => sum + (Number(line.quantity) || 1) * (Number(line.unitPrice) || 0), 0),
     [cart]
@@ -122,25 +105,18 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
     setPicker({ categoryId, menuItemId: '', variant: 'regular' })
   }
 
-  function onItemChange(menuItemId) {
-    setPicker({
-      categoryId: picker.categoryId,
-      menuItemId,
-      variant: 'regular',
-    })
-  }
-
-  function addToCart() {
-    if (!selectedItem) {
+  function addToCart(item = selectedItem, variant = picker.variant) {
+    if (!item) {
       notify.error('Select a menu item')
       return
     }
+    const hasDualPricing = categoryHasDualPricing(item.category)
     const line = {
-      menuItem: selectedItem._id,
-      name: buildOrderLineName(selectedItem, picker.variant),
-      unitPrice: getItemUnitPrice(selectedItem, picker.variant),
+      menuItem: item._id,
+      name: buildOrderLineName(item, hasDualPricing ? variant : 'single'),
+      unitPrice: getItemUnitPrice(item, hasDualPricing ? variant : 'single'),
       quantity: 1,
-      variant: dualPricing ? picker.variant : 'single',
+      variant: hasDualPricing ? variant : 'single',
     }
     const key = cartLineKey(line)
     setCart((prev) => {
@@ -151,7 +127,17 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
       return [...prev, { ...line, id: key }]
     })
     setPicker((p) => ({ ...p, menuItemId: '', variant: 'regular' }))
+    setVariantSheet(null)
     notify.success('Added to cart')
+  }
+
+  function chooseItem(item) {
+    setPicker((p) => ({ ...p, menuItemId: item._id, variant: 'regular' }))
+    if (categoryHasDualPricing(item.category)) {
+      setVariantSheet({ item, variant: 'regular' })
+      return
+    }
+    addToCart(item, 'single')
   }
 
   function changeQty(id, delta) {
@@ -169,10 +155,6 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
   }
 
   async function handleSubmit() {
-    if (!form.customerName.trim()) {
-      notify.error('Customer name is required')
-      return
-    }
     if (cart.length === 0) {
       notify.error('Add at least one item to the cart')
       return
@@ -229,7 +211,7 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
           <SectionTitle>Customer</SectionTitle>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Input
-              label="Name *"
+              label="Name"
               value={form.customerName}
               onChange={(e) => setForm({ ...form, customerName: e.target.value })}
               autoComplete="name"
@@ -269,18 +251,18 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
           ) : (
             <div className="space-y-4 rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
               {/* Category chips — fast tap on phones */}
-              <div className="-mx-1 overflow-x-auto pb-1 scrollbar-thin">
-                <div className="flex w-max min-w-full gap-2 px-1 sm:flex-wrap sm:w-auto">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                <div className="flex flex-wrap justify-center gap-2">
                   {categories.map((c) => (
                     <button
                       key={c._id}
                       type="button"
                       onClick={() => onCategoryChange(c._id)}
                       className={cn(
-                        'touch-manipulation shrink-0 rounded-full border px-4 py-2.5 text-sm font-medium transition active:scale-95',
+                        'touch-manipulation min-h-[40px] rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition active:scale-95',
                         picker.categoryId === c._id
-                          ? 'border-nb-neon-orange/70 bg-nb-neon-orange/20 text-nb-white'
-                          : 'border-white/10 bg-black/30 text-nb-gray hover:text-nb-cream'
+                          ? 'border-nb-neon-orange bg-nb-neon-orange text-black shadow-[0_0_18px_rgba(255,122,0,0.3)]'
+                          : 'border-white/10 bg-black/40 text-nb-gray hover:border-nb-neon-orange/40 hover:text-nb-cream'
                       )}
                     >
                       {c.name}
@@ -289,68 +271,57 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Select
-                  label="Category"
-                  value={picker.categoryId}
-                  onChange={(e) => onCategoryChange(e.target.value)}
-                  className="md:hidden"
-                >
-                  <option value="">Select category</option>
-                  {categories.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-                <Select
-                  label="Item"
-                  value={picker.menuItemId}
-                  onChange={(e) => onItemChange(e.target.value)}
-                  disabled={!picker.categoryId}
-                  className="md:col-span-1"
-                >
-                  <option value="">Select item</option>
-                  {categoryItems.map((m) => (
-                    <option key={m._id} value={m._id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </Select>
+              {categoryItems.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-nb-gray">
+                  No items in this category.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {categoryItems.map((item) => {
+                    const count = getCartQty(cart, item._id)
+                    const hasDualPricing = categoryHasDualPricing(item.category)
+                    return (
+                      <button
+                        key={item._id}
+                        type="button"
+                        onClick={() => chooseItem(item)}
+                        className={cn(
+                          'group relative flex min-h-[164px] flex-col overflow-hidden rounded-2xl border text-left shadow-[0_10px_24px_rgba(0,0,0,0.22)] transition active:scale-[0.98]',
+                          picker.menuItemId === item._id
+                            ? 'border-nb-neon-orange/70 ring-2 ring-nb-neon-orange/25'
+                            : 'border-white/10 hover:border-nb-neon-orange/40'
+                        )}
+                      >
+                        <div className="relative flex h-20 items-center justify-center bg-gradient-to-br from-orange-100 to-orange-200">
+                          <FiImage className="h-10 w-10 text-nb-neon-orange" aria-hidden />
+                          <span className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-nb-neon-orange text-white shadow-md">
+                            <FiInfo className="h-4 w-4" aria-hidden />
+                          </span>
+                        </div>
+                        <div className="flex flex-1 flex-col justify-between rounded-t-2xl bg-white px-2.5 py-3 text-center text-[#3d2b38]">
+                          <div>
+                            <p className="line-clamp-2 text-sm font-semibold leading-tight sm:text-base">{item.name}</p>
+                            <p className="mt-1 text-sm font-extrabold leading-tight">
+                              {hasDualPricing ? 'Multi price' : formatRupee(item.price)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="h-1.5 bg-nb-neon-orange" />
+                        {count > 0 && (
+                          <span className="absolute -bottom-1 -right-1 inline-flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-white text-base font-bold text-black shadow-lg">
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-nb-cream">
+                <FiShoppingCart className="h-4 w-4 text-nb-neon-orange" aria-hidden />
+                <span>{cart.length} item{cart.length === 1 ? '' : 's'} in cart</span>
               </div>
-
-              {dualPricing && selectedItem && (
-                <div className="space-y-2">
-                  <span className="text-xs font-medium uppercase tracking-wide text-nb-gray">Type</span>
-                  <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2">
-                    <VariantOption
-                      active={picker.variant === 'regular'}
-                      onClick={() => setPicker({ ...picker, variant: 'regular' })}
-                      title="Regular"
-                      price={formatRupee(selectedItem.price)}
-                    />
-                    <VariantOption
-                      active={picker.variant === 'variant'}
-                      onClick={() => setPicker({ ...picker, variant: 'variant' })}
-                      title={variantLabel}
-                      price={formatRupee(selectedItem.priceVariant)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedItem && (
-                <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm">
-                  <p className="text-nb-gray">Selected</p>
-                  <p className="mt-0.5 font-medium leading-snug text-nb-white">{previewName}</p>
-                  <p className="mt-1 text-base font-semibold text-nb-gold">{formatRupee(previewPrice)}</p>
-                </div>
-              )}
-
-              <Button type="button" size="lg" fullWidth onClick={addToCart} disabled={!selectedItem} className="!min-h-[52px]">
-                <FiPlus className="h-5 w-5 shrink-0" aria-hidden />
-                Add to cart
-              </Button>
             </div>
           )}
         </section>
@@ -460,6 +431,60 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
             />
           </div>
         </section>
+
+        {variantSheet && (
+          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/65 backdrop-blur-[2px] sm:items-center">
+            <button
+              type="button"
+              aria-label="Close variant picker"
+              className="absolute inset-0"
+              onClick={() => setVariantSheet(null)}
+            />
+            <div className="relative w-full rounded-t-3xl bg-white p-5 text-[#241821] shadow-2xl sm:max-w-md sm:rounded-3xl">
+              <h3 className="text-xl font-extrabold">Please choose</h3>
+              <div className="mt-5 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setVariantSheet({ ...variantSheet, variant: 'regular' })}
+                  className={cn(
+                    'flex min-h-[64px] w-full items-center justify-between rounded-xl border px-4 text-left text-lg font-semibold',
+                    variantSheet.variant === 'regular' ? 'border-[#3d2b38] bg-[#3d2b38]/5' : 'border-black/15'
+                  )}
+                >
+                  <span>Regular <FiInfo className="ml-2 inline h-5 w-5 text-black/35" aria-hidden /></span>
+                  <span className="text-black/35">{formatRupee(variantSheet.item.price)}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVariantSheet({ ...variantSheet, variant: 'variant' })}
+                  className={cn(
+                    'flex min-h-[64px] w-full items-center justify-between rounded-xl border px-4 text-left text-lg font-semibold',
+                    variantSheet.variant === 'variant' ? 'border-[#3d2b38] bg-[#3d2b38]/5' : 'border-black/15'
+                  )}
+                >
+                  <span>{getVariantLabel(variantSheet.item.category)} <FiInfo className="ml-2 inline h-5 w-5 text-black/35" aria-hidden /></span>
+                  <span className="text-black/35">{formatRupee(variantSheet.item.priceVariant)}</span>
+                </button>
+              </div>
+              <div className="mt-6 grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setVariantSheet(null)}
+                  className="min-h-[56px] rounded-2xl border-2 border-[#3d2b38] text-lg font-bold text-[#3d2b38]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addToCart(variantSheet.item, variantSheet.variant)}
+                  className="min-h-[56px] rounded-2xl bg-[#3d2b38] text-lg font-bold text-white"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* <p className="hidden text-center text-xs text-nb-gray sm:block">
           Prices include tax. Subtotal is shown above the action buttons.

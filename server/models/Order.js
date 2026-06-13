@@ -14,7 +14,7 @@ const orderLineSchema = new mongoose.Schema(
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: { type: String, unique: true },
-    customerName: { type: String, required: true },
+    customerName: { type: String, default: 'Walk-in Customer' },
     customerEmail: { type: String, default: '' },
     customerPhone: { type: String, default: '' },
     items: [orderLineSchema],

@@ -11,7 +11,7 @@ export function pick(source, keys) {
 }
 
 export const CATEGORY_FIELDS = ['name', 'slug', 'description', 'sortOrder', 'active', 'dualPricing', 'variantLabel']
-export const MENU_ITEM_FIELDS = ['name', 'slug', 'description', 'price', 'priceVariant', 'category', 'available', 'featured', 'tags']
+export const MENU_ITEM_FIELDS = ['name', 'slug', 'description', 'price', 'priceVariant', 'category', 'available', 'featured', 'tags', 'recipe']
 export const ORDER_UPDATE_FIELDS = [
   'customerName',
   'customerEmail',
@@ -40,7 +40,7 @@ export const OFFER_FIELDS = ['title', 'description', 'code', 'discountType', 'di
 export const REVIEW_FIELDS = ['authorName', 'authorTitle', 'rating', 'body', 'featured', 'visible']
 export const STAFF_FIELDS = ['userId', 'name', 'email', 'phone', 'department', 'role', 'salary', 'shifts', 'performanceScore', 'status', 'permissions']
 export const STAFF_ATTENDANCE_FIELDS = ['date', 'status', 'note']
-export const INVENTORY_FIELDS = ['sku', 'name', 'category', 'quantity', 'minStock', 'unit', 'supplier', 'lastRestocked']
+export const INVENTORY_FIELDS = ['sku', 'name', 'category', 'quantity', 'minStock', 'unit', 'supplier', 'expiryDate', 'purchasePrice', 'lastRestocked']
 export const MESSAGE_UPDATE_FIELDS = ['read']
 export const NOTIFICATION_CREATE_FIELDS = ['title', 'body', 'type', 'meta', 'userId']
 export const PAYMENT_SETTINGS_FIELDS = ['provider', 'publishableKey', 'secretKey', 'webhookSecret', 'currency', 'taxRatePercent']

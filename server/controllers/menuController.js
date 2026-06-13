@@ -58,7 +58,7 @@ export const listMenuItems = asyncHandler(async (req, res) => {
   if (regex) {
     filter.$or = [{ name: regex }, { description: regex }]
   }
-  const items = await MenuItem.find(filter).populate('category').sort({ updatedAt: -1 }).lean()
+  const items = await MenuItem.find(filter).populate('category').populate('recipe.inventoryItem').sort({ updatedAt: -1 }).lean()
   res.json({ items })
 })
 

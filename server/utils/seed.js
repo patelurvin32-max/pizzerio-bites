@@ -20,17 +20,18 @@ if (!uri) {
 
 await mongoose.connect(uri)
 
-const email = process.env.SEED_ADMIN_EMAIL || 'admin@pizzerio.bites'
-const password = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!'
+const email = process.env.SEED_ADMIN_EMAIL
+const password = process.env.SEED_ADMIN_PASSWORD
+
+if (!email || !password) {
+  console.error('SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD environment variables are required.')
+  process.exit(1)
+}
 
 if (process.env.NODE_ENV === 'production') {
   const policy = validatePassword(password)
   if (!policy.ok) {
     console.error(`SEED_ADMIN_PASSWORD invalid for production: ${policy.message}`)
-    process.exit(1)
-  }
-  if (password === 'ChangeMe123!') {
-    console.error('Do not use the default seed password in production. Set SEED_ADMIN_PASSWORD.')
     process.exit(1)
   }
 }

@@ -14,6 +14,13 @@ const menuItemSchema = new mongoose.Schema(
     available: { type: Boolean, default: true },
     featured: { type: Boolean, default: false },
     tags: [{ type: String }],
+    recipe: [
+      {
+        inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', required: true },
+        quantity: { type: Number, required: true, min: 0 },
+        unit: { type: String, enum: ['KG', 'LTR', 'PCS', 'GM', 'ML', 'unit'], required: true },
+      },
+    ],
   },
   { timestamps: true }
 )

@@ -31,10 +31,9 @@ npm install --prefix server
 npm run seed --prefix server
 ```
 
-Default credentials (override with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`):
-
-- Email: `admin@pizzerio.bites`
-- Password: `ChangeMe123!` (dev only)
+**Required environment variables for seed:**
+- `SEED_ADMIN_EMAIL` - Admin user email
+- `SEED_ADMIN_PASSWORD` - Admin user password (must meet password policy in production)
 
 5. Run API + UI:
 

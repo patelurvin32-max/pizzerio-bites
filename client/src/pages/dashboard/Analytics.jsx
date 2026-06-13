@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import {
   FiCalendar,
   FiDollarSign,
@@ -20,60 +20,84 @@ import {
   PaymentAnalytics,
   RealtimeInsights,
 } from '../../components/analytics/AnalyticsSections.jsx'
-import {
-  bestSellingChartData,
-  dailySalesData,
-  insightItems,
-  paymentMethodData,
-  productSalesRows,
-  weeklyOrdersData,
-} from '../../data/analyticsData.js'
+import api from '../../services/api.js'
 import { formatCurrency, todayDateValue } from '../../utils/helpers.js'
 
 const AnalyticsCharts = lazy(() => import('../../components/analytics/AnalyticsCharts.jsx'))
 
 const filters = ['Today', 'Yesterday', 'Last 7 Days', 'Last 30 Days', 'Custom Date']
+const emptyAnalytics = {
+  summary: {
+    totalSales: 0,
+    totalOrders: 0,
+    cashPayments: 0,
+    onlinePayments: 0,
+    averageOrderValue: 0,
+    bestSellingItem: 'No sales yet',
+    totalCustomers: 0,
+    trends: {},
+  },
+  dailySales: [],
+  paymentMethods: [],
+  bestSellingProducts: [],
+  weeklyOrders: [],
+  productSalesRows: [],
+  paymentSummary: [],
+  insights: [],
+}
 
 export default function Analytics() {
   const [date, setDate] = useState(todayDateValue())
   const [filter, setFilter] = useState('Last 7 Days')
   const [showFilters, setShowFilters] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [analytics, setAnalytics] = useState(emptyAnalytics)
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    setError('')
+    api
+      .get('/api/analytics/cafe', { params: { date, filter } })
+      .then((res) => {
+        if (alive) setAnalytics({ ...emptyAnalytics, ...res.data })
+      })
+      .catch((err) => {
+        if (alive) setError(err.message || 'Unable to load live analytics')
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [date, filter])
 
   const summaryCards = useMemo(
     () => [
-      { title: 'Total Sales', value: formatCurrency(324860), trend: '+12.8%', icon: FiDollarSign, tone: 'from-nb-neon-orange/40 to-nb-gold/15' },
-      { title: 'Total Orders', value: '1,248', trend: '+8.4%', icon: FiShoppingBag, tone: 'from-sky-400/35 to-cyan-300/10' },
-      { title: 'Cash Payments', value: formatCurrency(42000), trend: '+4.2%', icon: FiDollarSign, tone: 'from-emerald-400/35 to-emerald-200/10' },
-      { title: 'Online Payments', value: formatCurrency(111900), trend: '+15.6%', icon: FiTrendingUp, tone: 'from-cyan-400/35 to-emerald-300/10' },
-      { title: 'Average Order Value', value: formatCurrency(260), trend: '+3.9%', icon: FiUserCheck, tone: 'from-nb-gold/35 to-amber-200/10' },
-      { title: 'Best Selling Item', value: 'Cold Coffee', trend: '+18.2%', icon: FiTrendingUp, tone: 'from-rose-400/35 to-orange-300/10' },
-      { title: 'Total Customers', value: '892', trend: '+9.7%', icon: FiUsers, tone: 'from-indigo-400/35 to-sky-300/10' },
+      { title: 'Total Sales', value: formatCurrency(analytics.summary.totalSales), trend: analytics.summary.trends.totalSales || 'Live', icon: FiDollarSign, tone: 'from-nb-neon-orange/40 to-nb-gold/15' },
+      { title: 'Total Orders', value: analytics.summary.totalOrders.toLocaleString('en-IN'), trend: analytics.summary.trends.totalOrders || 'Live', icon: FiShoppingBag, tone: 'from-sky-400/35 to-cyan-300/10' },
+      { title: 'Cash Payments', value: formatCurrency(analytics.summary.cashPayments), trend: analytics.summary.trends.cashPayments || 'Live', icon: FiDollarSign, tone: 'from-emerald-400/35 to-emerald-200/10' },
+      { title: 'Online Payments', value: formatCurrency(analytics.summary.onlinePayments), trend: analytics.summary.trends.onlinePayments || 'Live', icon: FiTrendingUp, tone: 'from-cyan-400/35 to-emerald-300/10' },
+      { title: 'Average Order Value', value: formatCurrency(analytics.summary.averageOrderValue), trend: analytics.summary.trends.averageOrderValue || 'Live', icon: FiUserCheck, tone: 'from-nb-gold/35 to-amber-200/10' },
+      { title: 'Best Selling Item', value: analytics.summary.bestSellingItem, trend: analytics.summary.trends.bestSellingItem || 'Live', icon: FiTrendingUp, tone: 'from-rose-400/35 to-orange-300/10' },
+      { title: 'Total Customers', value: analytics.summary.totalCustomers.toLocaleString('en-IN'), trend: analytics.summary.trends.totalCustomers || 'Live', icon: FiUsers, tone: 'from-indigo-400/35 to-sky-300/10' },
     ],
-    []
-  )
-
-  const paymentSummary = useMemo(
-    () => [
-      { label: 'Total Cash Transactions', value: '326', progress: 62 },
-      { label: 'Total Online Transactions', value: '782', progress: 88 },
-      { label: 'Total Refunds', value: '12', progress: 18 },
-    ],
-    []
+    [analytics]
   )
 
   function exportExcel() {
     const rows = [
       ['Product Name', 'Quantity Sold', 'Unit Price', 'Total Revenue', 'Percentage of Sales'],
-      ...productSalesRows.map((row) => [row.name, row.quantity, row.unitPrice, row.revenue, `${row.percent}%`]),
+      ...analytics.productSalesRows.map((row) => [row.name, row.quantity, row.unitPrice, row.revenue, `${row.percent}%`]),
     ]
     const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n')
     downloadFile(`cafe-analytics-${date}.csv`, `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`)
   }
 
   function exportPdf() {
-    const html = buildPrintableReport()
+    const html = buildPrintableReport(analytics)
     const report = window.open('', '_blank', 'width=1100,height=800')
     if (!report) {
       setError('Popup was blocked. Please allow popups to export the PDF report.')
@@ -87,9 +111,6 @@ export default function Analytics() {
 
   function refreshFilter(nextFilter) {
     setFilter(nextFilter)
-    setError('')
-    setLoading(true)
-    window.setTimeout(() => setLoading(false), 450)
   }
 
   if (loading) return <AnalyticsSkeleton />
@@ -153,16 +174,16 @@ export default function Analytics() {
 
       <Suspense fallback={<AnalyticsSkeleton />}>
         <AnalyticsCharts
-          dailySales={dailySalesData}
-          paymentMethods={paymentMethodData}
-          bestSellers={bestSellingChartData}
-          weeklyOrders={weeklyOrdersData}
+          dailySales={analytics.dailySales}
+          paymentMethods={analytics.paymentMethods}
+          bestSellers={analytics.bestSellingProducts}
+          weeklyOrders={analytics.weeklyOrders}
         />
       </Suspense>
 
-      <ProductSalesTable rows={productSalesRows} />
-      <PaymentAnalytics items={paymentSummary} />
-      <RealtimeInsights items={insightItems} />
+      <ProductSalesTable rows={analytics.productSalesRows} />
+      <PaymentAnalytics items={analytics.paymentSummary} />
+      <RealtimeInsights items={analytics.insights} />
     </div>
   )
 }
@@ -176,9 +197,8 @@ function downloadFile(filename, href) {
   link.remove()
 }
 
-function buildPrintableReport() {
-  const totalSales = productSalesRows.reduce((sum, row) => sum + row.revenue, 0)
-  const products = productSalesRows
+function buildPrintableReport(analytics) {
+  const products = analytics.productSalesRows
     .map(
       (row) => `
         <tr>
@@ -213,9 +233,9 @@ function buildPrintableReport() {
         <h1>Cafe Analytics</h1>
         <p>Generated analytics export for the selected reporting window.</p>
         <div class="cards">
-          <div class="card"><div class="label">Total Sales</div><div class="value">${formatCurrency(totalSales)}</div></div>
-          <div class="card"><div class="label">Total Orders</div><div class="value">1,248</div></div>
-          <div class="card"><div class="label">Best Selling Item</div><div class="value">Cold Coffee</div></div>
+          <div class="card"><div class="label">Total Sales</div><div class="value">${formatCurrency(analytics.summary.totalSales)}</div></div>
+          <div class="card"><div class="label">Total Orders</div><div class="value">${analytics.summary.totalOrders}</div></div>
+          <div class="card"><div class="label">Best Selling Item</div><div class="value">${analytics.summary.bestSellingItem}</div></div>
         </div>
         <h2>Product Sales</h2>
         <table>

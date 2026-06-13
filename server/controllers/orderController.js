@@ -2,6 +2,7 @@ import Order from '../models/Order.js'
 import Notification from '../models/Notification.js'
 import { asyncHandler } from '../utils/asyncHandler.js'
 import { pick, ORDER_UPDATE_FIELDS } from '../utils/pick.js'
+import { deductInventoryForOrder } from './inventoryController.js'
 
 async function notifyOrder(order, title) {
   await Notification.create({
@@ -40,9 +41,6 @@ export const createOrder = asyncHandler(async (req, res) => {
     taxRatePercent,
   } = req.body
 
-  if (!customerName?.trim()) {
-    return res.status(400).json({ message: 'Customer name is required' })
-  }
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'Add at least one menu item' })
   }
@@ -67,9 +65,10 @@ export const createOrder = asyncHandler(async (req, res) => {
   const taxRate = Math.max(0, Number(taxRatePercent) || 0)
   const tax = Math.round(subtotal * taxRate) / 100
   const total = subtotal + tax
+  const safeCustomerName = customerName?.trim() || 'Walk-in Customer'
 
   const order = await Order.create({
-    customerName: customerName.trim(),
+    customerName: safeCustomerName,
     customerEmail: customerEmail?.trim() || '',
     customerPhone: customerPhone?.trim() || '',
     items: lines,
@@ -82,6 +81,13 @@ export const createOrder = asyncHandler(async (req, res) => {
     paymentStatus: paymentStatus || 'unpaid',
     paymentMethod: paymentMethod || 'card',
   })
+
+  try {
+    await deductInventoryForOrder(lines, order._id)
+  } catch (error) {
+    await Order.findByIdAndDelete(order._id)
+    throw error
+  }
 
   await notifyOrder(order, 'New order received')
   res.status(201).json(order)
