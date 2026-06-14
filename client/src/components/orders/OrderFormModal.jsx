@@ -26,7 +26,7 @@ const initialForm = {
   notes: '',
   status: 'pending',
   paymentStatus: 'unpaid',
-  paymentMethod: 'card',
+  paymentMethod: 'cash',
 }
 
 const emptyPicker = {
@@ -128,7 +128,7 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
     })
     setPicker((p) => ({ ...p, menuItemId: '', variant: 'regular' }))
     setVariantSheet(null)
-    notify.success('Added to cart')
+    notify.success('Added to cart', 1000)
   }
 
   function chooseItem(item) {

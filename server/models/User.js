@@ -19,6 +19,8 @@ const userSchema = new mongoose.Schema(
     tokenVersion: { type: Number, default: 0 },
     refreshTokenHash: { type: String, select: false, default: '' },
     refreshTokenExpires: { type: Date, select: false },
+    failedLoginAttempts: { type: Number, default: 0 },
+    lockedUntil: { type: Date, default: null },
   },
   { timestamps: true }
 )
@@ -34,5 +36,14 @@ userSchema.methods.comparePassword = function comparePassword(candidate) {
   if (!candidate || !this.password) return false
   return bcrypt.compare(candidate, this.password)
 }
+
+// Single field indexes
+userSchema.index({ email: 1 }, { unique: true })
+userSchema.index({ role: 1 })
+userSchema.index({ status: 1 })
+userSchema.index({ createdAt: -1 })
+
+// Compound: find active staff members
+userSchema.index({ status: 1, role: 1 })
 
 export default mongoose.models.User || mongoose.model('User', userSchema)

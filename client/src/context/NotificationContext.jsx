@@ -26,7 +26,7 @@ export function NotificationProvider({ children }) {
     setToasts((t) => t.filter((x) => x.id !== id))
   }, [])
 
-  const value = useMemo(() => ({ push, dismiss, success: (m) => push({ type: 'success', title: 'Success', message: m }), error: (m) => push({ type: 'error', title: 'Error', message: m }), info: (m) => push({ type: 'info', title: 'Notice', message: m }) }), [push])
+  const value = useMemo(() => ({ push, dismiss, success: (m, duration) => push({ type: 'success', title: 'Success', message: m, duration }), error: (m, duration) => push({ type: 'error', title: 'Error', message: m, duration }), info: (m, duration) => push({ type: 'info', title: 'Notice', message: m, duration }) }), [push])
 
   return (
     <NotificationContext.Provider value={value}>

@@ -31,7 +31,7 @@ const orderSchema = new mongoose.Schema(
       enum: ['unpaid', 'paid', 'refunded', 'failed'],
       default: 'unpaid',
     },
-    paymentMethod: { type: String, default: 'card' },
+    paymentMethod: { type: String, default: 'cash' },
     notes: { type: String, default: '' },
     deliveryAddress: { type: String, default: '' },
     assignedStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', default: null },
@@ -54,5 +54,26 @@ orderSchema.pre('save', async function genOrderNumber(next) {
     next(error)
   }
 })
+
+// Single field indexes for common WHERE clauses
+orderSchema.index({ orderNumber: 1 }, { unique: true })
+orderSchema.index({ customerEmail: 1 })
+orderSchema.index({ customerPhone: 1 })
+orderSchema.index({ status: 1 })
+orderSchema.index({ createdAt: -1 })
+orderSchema.index({ updatedAt: -1 })
+
+// Compound indexes for common query combinations
+// Pattern: fetch orders by customer email sorted by date (most common)
+orderSchema.index({ customerEmail: 1, createdAt: -1 })
+
+// Pattern: fetch orders by status sorted by date (for dashboard/admin)
+orderSchema.index({ status: 1, createdAt: -1 })
+
+// Pattern: date range queries with status filter
+orderSchema.index({ status: 1, createdAt: -1, total: 1 })
+
+// Pattern: find pending orders older than X minutes (for delayed alerts)
+orderSchema.index({ status: 1, createdAt: 1 })
 
 export default mongoose.models.Order || mongoose.model('Order', orderSchema)

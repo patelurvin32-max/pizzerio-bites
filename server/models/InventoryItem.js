@@ -16,4 +16,20 @@ const inventoryItemSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+// Single field indexes
+inventoryItemSchema.index({ sku: 1 }, { unique: true })
+inventoryItemSchema.index({ quantity: 1 })
+inventoryItemSchema.index({ lastRestocked: -1 })
+inventoryItemSchema.index({ updatedAt: -1 })
+
+// Compound indexes
+// Pattern: find low-stock items (quantity < minStock) sorted by urgency
+inventoryItemSchema.index({ quantity: 1, minStock: 1 })
+
+// Pattern: fetch inventory with product details sorted by last update
+inventoryItemSchema.index({ sku: 1, updatedAt: -1 })
+
+// Pattern: items that need restocking (quantity <= minStock), ordered by last restocked
+inventoryItemSchema.index({ quantity: 1, lastRestocked: -1 })
+
 export default mongoose.models.InventoryItem || mongoose.model('InventoryItem', inventoryItemSchema)

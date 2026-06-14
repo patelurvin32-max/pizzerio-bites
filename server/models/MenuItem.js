@@ -25,4 +25,16 @@ const menuItemSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+// Single field indexes
+menuItemSchema.index({ slug: 1 }, { unique: true })
+menuItemSchema.index({ category: 1 })
+menuItemSchema.index({ available: 1 })
+menuItemSchema.index({ createdAt: -1 })
+
+// Compound: find available items in category
+menuItemSchema.index({ category: 1, available: 1 })
+
+// For search functionality
+menuItemSchema.index({ name: 'text', description: 'text' })
+
 export default mongoose.models.MenuItem || mongoose.model('MenuItem', menuItemSchema)

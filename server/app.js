@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser'
 import { fileURLToPath } from 'url'
 import { apiLimiter } from './middleware/rateLimiter.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
+import { doubleCsrf } from 'csrf-csrf'
 
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
@@ -71,7 +72,26 @@ app.use(
 app.use(morgan(isProd ? 'combined' : 'dev'))
 app.use(cookieParser())
 app.use(express.json({ limit: '1mb' }))
+
+const { doubleCsrfProtection } = doubleCsrf({
+  cookie: {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'strict',
+  },
+  ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+})
+
 app.use(apiLimiter)
+
+app.use((req, res, next) => {
+  const exemptPaths = ['/api/auth/login', '/api/auth/refresh']
+  const isExempt = exemptPaths.some(path => req.path.startsWith(path))
+  if (!isExempt && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return csrfMiddleware(req, res, next)
+  }
+  next()
+})
 
 app.use(
   '/uploads',

@@ -79,7 +79,7 @@ export const createOrder = asyncHandler(async (req, res) => {
     deliveryAddress: deliveryAddress?.trim() || '',
     status: status || 'pending',
     paymentStatus: paymentStatus || 'unpaid',
-    paymentMethod: paymentMethod || 'card',
+    paymentMethod: paymentMethod || 'cash',
   })
 
   try {

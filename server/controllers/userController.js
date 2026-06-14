@@ -109,6 +109,9 @@ export const updateUser = asyncHandler(async (req, res) => {
     user.status = body.status
   }
   if (body.role) {
+    if (body.role === 'SUPER_ADMIN' || user.role === 'SUPER_ADMIN') {
+      return res.status(403).json({ message: 'SUPER_ADMIN role can only be changed directly in the database' })
+    }
     if (!allowedRoles.has(body.role)) return res.status(400).json({ message: 'Invalid role' })
     assertCanAssignRole(req.user.role, body.role)
     if (req.params.id === req.user.id && body.role !== user.role) {

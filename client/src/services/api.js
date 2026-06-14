@@ -1,14 +1,13 @@
 import axios from 'axios'
 
-const TOKEN_KEY = 'pb_admin_token'
+let _accessToken = null
 
 export function getAccessToken() {
-  return sessionStorage.getItem(TOKEN_KEY)
+  return _accessToken
 }
 
 export function setAccessToken(token) {
-  if (token) sessionStorage.setItem(TOKEN_KEY, token)
-  else sessionStorage.removeItem(TOKEN_KEY)
+  _accessToken = token || null
 }
 
 const api = axios.create({

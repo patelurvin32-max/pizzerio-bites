@@ -14,6 +14,14 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
 })
 
+export const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many login attempts. Please try again later.' },
+})
+
 /** Public reservation / contact forms — strict per IP */
 export const publicPostLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

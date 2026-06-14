@@ -30,8 +30,7 @@ if (orderNumberMigration.updated) {
   console.log(`Order numbers migrated (${orderNumberMigration.updated} updated)`)
 }
 
-const seedDefaults =
-  process.env.ENABLE_DEFAULT_SEED === 'true' || process.env.NODE_ENV !== 'production'
+const seedDefaults = process.env.ENABLE_DEFAULT_SEED === 'true'
 
 if (seedDefaults) {
   const categoryCount = await ensureDefaultCategories()

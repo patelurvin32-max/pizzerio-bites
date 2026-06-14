@@ -59,11 +59,27 @@ export const login = asyncHandler(async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password required' })
   }
-  const user = await User.findOne({ email: email.toLowerCase() }).select('+password +refreshTokenHash +refreshTokenExpires')
+  const user = await User.findOne({ email: email.toLowerCase() }).select('+password +refreshTokenHash +refreshTokenExpires +failedLoginAttempts +lockedUntil')
   if (!user) return res.status(401).json({ message: 'Invalid credentials' })
+  
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    return res.status(429).json({ message: 'Account is temporarily locked due to too many failed login attempts' })
+  }
+  
   const ok = await user.comparePassword(password)
-  if (!ok) return res.status(401).json({ message: 'Invalid credentials' })
+  if (!ok) {
+    user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1
+    if (user.failedLoginAttempts >= 10) {
+      user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000)
+    }
+    await user.save()
+    return res.status(401).json({ message: 'Invalid credentials' })
+  }
+  
   if (user.status !== 'active') return res.status(403).json({ message: 'Account is not active' })
+  
+  user.failedLoginAttempts = 0
+  user.lockedUntil = null
   const rawRefresh = generateRefreshToken()
   await persistRefreshToken(user, rawRefresh, { lastLogin: new Date() })
   setRefreshCookie(res, rawRefresh)

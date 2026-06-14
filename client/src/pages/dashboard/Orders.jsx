@@ -13,7 +13,7 @@ import { cn, formatCurrency, formatDate } from '../../utils/helpers.js'
 import { useNotify } from '../../context/NotificationContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 
-const PAYMENT_METHOD_OPTIONS = ['cash', 'online', 'card', 'wallet']
+const PAYMENT_METHOD_OPTIONS = ['cash', 'online']
 const PAGE_LENGTH_OPTIONS = [10, 25, 50, 100]
 
 function OrderCard({ order, onPatch, onInvoice }) {
@@ -29,24 +29,24 @@ function OrderCard({ order, onPatch, onInvoice }) {
       </div>
       <div className="mt-4 grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">
         <Select
-          label="Status"
-          value={order.status}
-          onChange={(e) => onPatch(order._id, { status: e.target.value })}
-        >
-          {ORDER_STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s.replaceAll('_', ' ')}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Payment"
+          label="Payment status"
           value={order.paymentStatus}
           onChange={(e) => onPatch(order._id, { paymentStatus: e.target.value })}
         >
           {PAYMENT_STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>
               {s}
+            </option>
+          ))}
+        </Select>
+        <Select
+          label="Payment method"
+          value={order.paymentMethod || 'cash'}
+          onChange={(e) => onPatch(order._id, { paymentMethod: e.target.value })}
+        >
+          {PAYMENT_METHOD_OPTIONS.map((method) => (
+            <option key={method} value={method}>
+              {method}
             </option>
           ))}
         </Select>
@@ -210,7 +210,7 @@ export default function Orders() {
                       </Td>
                       <Td>
                         <Select
-                          value={o.paymentMethod || 'card'}
+                          value={o.paymentMethod || 'cash'}
                           onChange={(e) => patch(o._id, { paymentMethod: e.target.value })}
                           className="!min-h-[40px] !py-2 text-xs"
                         >
