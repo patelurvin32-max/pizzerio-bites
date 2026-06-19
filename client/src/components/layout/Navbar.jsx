@@ -24,7 +24,7 @@ export default function Navbar() {
             </button>
             <div>
               <p className="font-heading text-sm font-bold text-nb-white sm:text-base">Pizzerio Bites Admin</p>
-              {/* <p className="hidden text-xs text-nb-gray sm:block">Premium operations</p> */}
+              <p className="hidden text-xs text-nb-gray sm:block">Premium operations</p>
             </div>
           </div>
 
