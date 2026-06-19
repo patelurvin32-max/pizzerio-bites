@@ -318,7 +318,7 @@ export default function Menu() {
         }
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Enter item name" />
           <Input label="Slug" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="auto from name if empty" />
           <Select label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
             {categories.map((c) => (
@@ -330,20 +330,22 @@ export default function Menu() {
           {dualPricing ? (
             <>
               <Input
-                label="Regular"
+                label="Regular Price"
                 type="number"
                 min="0"
                 step="1"
                 value={form.price}
                 onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+                placeholder="Enter regular price"
               />
               <Input
-                label={variantLabel}
+                label={`${variantLabel} Price`}
                 type="number"
                 min="0"
                 step="1"
                 value={form.priceVariant}
                 onChange={(e) => setForm({ ...form, priceVariant: Number(e.target.value) })}
+                placeholder="Enter Extra Cheese price"
               />
             </>
           ) : (
@@ -354,6 +356,7 @@ export default function Menu() {
               step="1"
               value={form.price}
               onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+              placeholder="Enter price"
             />
           )}
           <label className="flex flex-wrap items-center gap-3 text-sm text-nb-gray sm:col-span-2">

@@ -5,7 +5,9 @@ import { FiBell, FiCalendar, FiCheck, FiMail, FiPackage, FiShoppingBag, FiUsers 
 import { notificationService } from '../../services/notificationService.js'
 import { formatDate } from '../../utils/helpers.js'
 
-function notificationIcon(type) {
+const PREVIEW_LIMIT = 3
+
+export function notificationIcon(type) {
   switch (type) {
     case 'reservation':
       return FiCalendar
@@ -160,54 +162,70 @@ export default function NotificationDropdown() {
               )}
             </div>
 
-            <div className="scrollbar-thin max-h-[min(70vh,420px)] overflow-y-auto">
+            <div className="overflow-hidden">
               {loading ? (
                 <p className="px-4 py-8 text-center text-sm text-nb-gray">Loading…</p>
               ) : items.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-nb-gray">No notifications yet</p>
               ) : (
-                <ul className="divide-y divide-white/5">
-                  {items.map((n) => {
-                    const Icon = notificationIcon(n.type)
-                    return (
-                      <li key={n._id}>
-                        <button
-                          type="button"
-                          onClick={() => onSelect(n)}
-                          className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-white/5 ${
-                            !n.read ? 'bg-nb-neon-orange/5' : ''
-                          }`}
-                        >
-                          <span
-                            className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
-                              !n.read
-                                ? 'border-nb-neon-orange/40 bg-nb-neon-orange/15 text-nb-neon-orange'
-                                : 'border-white/10 bg-white/5 text-nb-gray'
+                <>
+                  <ul className="divide-y divide-white/5">
+                    {items.slice(0, PREVIEW_LIMIT).map((n) => {
+                      const Icon = notificationIcon(n.type)
+                      return (
+                        <li key={n._id}>
+                          <button
+                            type="button"
+                            onClick={() => onSelect(n)}
+                            className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-white/5 ${
+                              !n.read ? 'bg-nb-neon-orange/5' : ''
                             }`}
                           >
-                            <Icon className="h-4 w-4" />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-start justify-between gap-2">
-                              <span className={`text-sm ${!n.read ? 'font-semibold text-nb-white' : 'text-nb-cream'}`}>
-                                {n.title}
+                            <span
+                              className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+                                !n.read
+                                  ? 'border-nb-neon-orange/40 bg-nb-neon-orange/15 text-nb-neon-orange'
+                                  : 'border-white/10 bg-white/5 text-nb-gray'
+                              }`}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-start justify-between gap-2">
+                                <span className={`text-sm ${!n.read ? 'font-semibold text-nb-white' : 'text-nb-cream'}`}>
+                                  {n.title}
+                                </span>
+                                {!n.read && (
+                                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-nb-neon-orange" aria-hidden />
+                                )}
                               </span>
-                              {!n.read && (
-                                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-nb-neon-orange" aria-hidden />
+                              {n.body && (
+                                <span className="mt-0.5 line-clamp-2 block text-xs text-nb-gray">{n.body}</span>
                               )}
+                              <span className="mt-1 block text-[10px] uppercase tracking-wide text-nb-gray/80">
+                                {formatDate(n.createdAt)}
+                              </span>
                             </span>
-                            {n.body && (
-                              <span className="mt-0.5 line-clamp-2 block text-xs text-nb-gray">{n.body}</span>
-                            )}
-                            <span className="mt-1 block text-[10px] uppercase tracking-wide text-nb-gray/80">
-                              {formatDate(n.createdAt)}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {items.length > PREVIEW_LIMIT && (
+                    <div className="border-t border-white/10 px-4 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false)
+                          navigate('/dashboard/notifications')
+                        }}
+                        className="w-full rounded-lg py-2 text-center text-sm font-medium text-nb-neon-orange transition hover:bg-white/5"
+                      >
+                        See more
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </motion.div>

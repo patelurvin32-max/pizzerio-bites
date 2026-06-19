@@ -85,22 +85,15 @@ export const dashboardSummary = asyncHandler(async (_req, res) => {
   const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
   const [
-    totalOrders,
-    revenueAgg,
-    ordersToday,
-    reservationsPending,
+    dineInOrders,
+    takeawayOrders,
     userCount,
     staffActive,
     lowStock,
     popularItems,
   ] = await Promise.all([
-    Order.countDocuments(),
-    Order.aggregate([
-      { $match: { paymentStatus: 'paid', createdAt: { $gte: last30 } } },
-      { $group: { _id: null, total: { $sum: '$total' } } },
-    ]),
-    Order.countDocuments({ createdAt: { $gte: startOfDay } }),
-    Reservation.countDocuments({ status: 'pending' }),
+    Order.countDocuments({ orderType: 'dine-in' }),
+    Order.countDocuments({ orderType: 'takeaway' }),
     User.countDocuments({ status: 'active' }),
     Staff.countDocuments({ status: 'active' }),
     InventoryItem.countDocuments({ $expr: { $lte: ['$quantity', '$minStock'] } }),
@@ -113,10 +106,8 @@ export const dashboardSummary = asyncHandler(async (_req, res) => {
   ])
 
   res.json({
-    totalOrders,
-    revenue30d: revenueAgg[0]?.total || 0,
-    ordersToday,
-    reservationsPending,
+    dineInOrders,
+    takeawayOrders,
     userCount,
     staffActive,
     lowStockCount: lowStock,
@@ -220,7 +211,7 @@ export const cafeAnalytics = asyncHandler(async (req, res) => {
     const d = addDays(start, i)
     const key = dayKey(d)
     salesBuckets[key] = {
-      date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
       sales: 0,
       orders: 0,
     }
@@ -317,7 +308,6 @@ export const cafeAnalytics = asyncHandler(async (req, res) => {
       { label: 'Peak sales day', value: peakDay.date, detail: `${peakDay.sales ? `Rs. ${Math.round(peakDay.sales).toLocaleString('en-IN')}` : 'No'} revenue in this range` },
       { label: 'Most used payment method', value: mostUsedPayment, detail: `${Math.max(cashCount, onlineCount)} paid transactions` },
       { label: 'Lowest selling item', value: lowestItem, detail: productRows.length ? 'Lowest revenue item in this range' : 'No product sales yet' },
-      { label: 'Highest revenue day', value: peakDay.date, detail: `${peakDay.sales ? `Rs. ${Math.round(peakDay.sales).toLocaleString('en-IN')}` : 'No'} revenue` },
     ],
   })
 })

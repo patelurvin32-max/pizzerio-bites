@@ -15,4 +15,13 @@ const auditLogSchema = new mongoose.Schema(
 
 auditLogSchema.index({ createdAt: -1 })
 
+// TTL INDEX: Automatically delete documents 30 days after creation
+auditLogSchema.index(
+  { createdAt: 1 },
+  {
+    expireAfterSeconds: 2592000,
+    name: 'auditLog_ttl_30days'
+  }
+)
+
 export default mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema)

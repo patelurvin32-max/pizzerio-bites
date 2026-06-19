@@ -111,6 +111,7 @@ export async function deductInventoryForOrder(lines, orderId = null) {
     if (!menuItem?.recipe?.length) continue
     for (const ing of menuItem.recipe) {
       const inventoryItem = ing.inventoryItem
+      // Skip if inventory item doesn't exist
       if (!inventoryItem) continue
       const key = String(inventoryItem._id)
       const quantity = normalizeDelta((Number(ing.quantity) || 0) * line.quantity, ing.unit, inventoryItem.unit)
@@ -118,6 +119,11 @@ export async function deductInventoryForOrder(lines, orderId = null) {
       prev.quantity += quantity
       required.set(key, prev)
     }
+  }
+
+  // If no inventory items are required (no recipes or no inventory items exist), return early
+  if (required.size === 0) {
+    return []
   }
 
   const shortages = []
@@ -151,25 +157,121 @@ export async function deductInventoryForOrder(lines, orderId = null) {
   return transactions
 }
 
-export const listInventory = asyncHandler(async (_req, res) => {
-  const items = await InventoryItem.find().sort({ name: 1 }).lean()
-  res.json({ items })
+export const listInventory = asyncHandler(async (req, res) => {
+  // Get pagination parameters
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20))
+
+  // Get search and filter parameters
+  const search = (req.query.search || '').trim()
+  const category = (req.query.category || '').trim()
+  const lowStockOnly = req.query.lowStock === 'true'
+
+  // Build filter
+  const filter = {}
+
+  // Search by name or product ID
+  if (search) {
+    const regex = new RegExp(search, 'i')  // Case-insensitive search
+    filter.$or = [
+      { name: regex },
+      { sku: regex }
+    ]
+  }
+
+  // Filter by category
+  if (category) {
+    filter.category = category
+  }
+
+  // Filter low stock items
+  if (lowStockOnly) {
+    filter.$expr = { $lte: ['$quantity', '$minStock'] }  // quantity <= minStock
+  }
+
+  // Fetch data and count in parallel
+  const [items, total] = await Promise.all([
+    InventoryItem.find(filter)
+      .select('name sku quantity minStock unit lastRestocked updatedAt category expiryDate purchasePrice supplier')  // Only needed fields
+      .sort({ category: 1, name: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+    InventoryItem.countDocuments(filter),
+  ])
+  
+  // Return with pagination metadata
+  res.json({
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit) || 1,
+      hasNextPage: page < Math.ceil(total / limit),
+    }
+  })
 })
 
 export const createInventory = asyncHandler(async (req, res) => {
-  const item = await InventoryItem.create(pick(req.body, INVENTORY_FIELDS))
-  res.status(201).json(item)
+  const data = pick(req.body, INVENTORY_FIELDS)
+  if (data.expiryDate && data.expiryDate !== '') {
+    data.expiryDate = new Date(data.expiryDate)
+  } else {
+    delete data.expiryDate
+  }
+  try {
+    const item = await InventoryItem.create(data)
+    res.status(201).json(item)
+  } catch (error) {
+    console.error('Error creating inventory item:', error)
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'SKU already exists' })
+    }
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message })
+    }
+    return res.status(500).json({ message: error.message || 'Failed to create product' })
+  }
 })
 
 export const updateInventory = asyncHandler(async (req, res) => {
   const prev = await InventoryItem.findById(req.params.id)
-  const item = await InventoryItem.findByIdAndUpdate(req.params.id, pick(req.body, INVENTORY_FIELDS), {
+  const data = pick(req.body, INVENTORY_FIELDS)
+  if (data.expiryDate && data.expiryDate !== '') {
+    data.expiryDate = new Date(data.expiryDate)
+  } else {
+    delete data.expiryDate
+  }
+  const item = await InventoryItem.findByIdAndUpdate(req.params.id, data, {
     new: true,
     runValidators: true,
   })
   if (!item) return res.status(404).json({ message: 'Not found' })
   if (item.quantity <= item.minStock && (!prev || prev.quantity > prev.minStock)) await notifyLowStock(item)
   res.json(item)
+})
+
+export const bulkUpdateExpiry = asyncHandler(async (req, res) => {
+  const { updates } = req.body
+  if (!Array.isArray(updates) || updates.length === 0) {
+    return res.status(400).json({ message: 'Invalid updates array' })
+  }
+
+  const results = []
+  for (const update of updates) {
+    const { _id, expiryDate } = update
+    if (!_id || !expiryDate) continue
+
+    const item = await InventoryItem.findByIdAndUpdate(
+      _id,
+      { expiryDate: new Date(expiryDate) },
+      { new: true, runValidators: true }
+    )
+    if (item) results.push(item)
+  }
+
+  res.json({ updated: results.length, items: results })
 })
 
 export const deleteInventory = asyncHandler(async (req, res) => {
@@ -179,9 +281,11 @@ export const deleteInventory = asyncHandler(async (req, res) => {
 
 export const dashboard = asyncHandler(async (_req, res) => {
   const { start, end } = dayRange()
-  const [items, todayTransactions, closing] = await Promise.all([
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  const [items, todayTransactions, weekTransactions, closing] = await Promise.all([
     InventoryItem.find().lean(),
     InventoryTransaction.find({ date: { $gte: start, $lte: end } }).lean(),
+    InventoryTransaction.find({ date: { $gte: sevenDaysAgo } }).lean(),
     InventoryClosing.findOne({ dateKey: dateKey() }).lean(),
   ])
   const expiredCutoff = new Date()
@@ -195,6 +299,26 @@ export const dashboard = asyncHandler(async (_req, res) => {
     },
     { stockIn: 0, stockOut: 0, waste: 0 }
   )
+
+  const dailyMovement = []
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+    const dateKey = date.toISOString().slice(0, 10)
+    const dayTransactions = weekTransactions.filter((tx) => tx.date.toISOString().slice(0, 10) === dateKey)
+    const dayTotals = dayTransactions.reduce(
+      (acc, tx) => {
+        if (tx.type === 'stock_in') acc.stockIn += tx.quantity
+        if (tx.type === 'stock_out' || tx.type === 'order_deduction') acc.stockOut += tx.quantity
+        if (tx.type === 'waste') acc.waste += tx.quantity
+        return acc
+      },
+      { stockIn: 0, stockOut: 0, waste: 0 }
+    )
+    dailyMovement.push({
+      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      ...dayTotals,
+    })
+  }
 
   res.json({
     metrics: {
@@ -210,6 +334,7 @@ export const dashboard = asyncHandler(async (_req, res) => {
     lowStock: items.filter((it) => it.quantity <= it.minStock),
     nearExpiry: items.filter((it) => it.expiryDate && new Date(it.expiryDate) <= nearExpiryCutoff),
     todayTransactions,
+    dailyMovement,
     closedToday: Boolean(closing),
     closing,
   })
@@ -338,17 +463,47 @@ export const closeDailyStock = asyncHandler(async (req, res) => {
 })
 
 export const reports = asyncHandler(async (req, res) => {
-  const { start, end } = dayRange(req.query.date || new Date())
+  let startDate, endDate
+  
+  if (req.query.startDate && req.query.endDate) {
+    startDate = new Date(req.query.startDate)
+    endDate = new Date(req.query.endDate)
+    endDate.setHours(23, 59, 59, 999)
+  } else {
+    const range = dayRange(req.query.date || new Date())
+    startDate = range.start
+    endDate = range.end
+  }
+
   const [transactions, closings, items] = await Promise.all([
-    InventoryTransaction.find({ date: { $gte: start, $lte: end } }).sort({ date: -1 }).lean(),
-    InventoryClosing.find({ date: { $gte: start, $lte: end } }).sort({ date: -1 }).lean(),
+    InventoryTransaction.find({ date: { $gte: startDate, $lte: endDate } }).sort({ date: -1 }).lean(),
+    InventoryClosing.find({ date: { $gte: startDate, $lte: endDate } }).sort({ date: -1 }).lean(),
     InventoryItem.find().sort({ name: 1 }).lean(),
   ])
+
+  const stockIn = transactions.filter((tx) => tx.type === 'stock_in')
+  const stockOut = transactions.filter((tx) => tx.type === 'stock_out' || tx.type === 'order_deduction')
+  const waste = transactions.filter((tx) => tx.type === 'waste')
+
+  const totalStockInValue = stockIn.reduce((sum, tx) => {
+    const item = items.find((i) => String(i._id) === String(tx.item))
+    const price = item?.purchasePrice || 0
+    return sum + (Number(tx.quantity) || 0) * price
+  }, 0)
+
+  const totalStockOut = stockOut.reduce((sum, tx) => sum + (Number(tx.quantity) || 0), 0)
+  const totalWaste = waste.reduce((sum, tx) => sum + (Number(tx.quantity) || 0), 0)
+
   res.json({
-    stockIn: transactions.filter((tx) => tx.type === 'stock_in'),
-    stockOut: transactions.filter((tx) => tx.type === 'stock_out' || tx.type === 'order_deduction'),
-    waste: transactions.filter((tx) => tx.type === 'waste'),
-    summary: items,
+    stockIn,
+    stockOut,
+    waste,
+    summary: {
+      totalStockInValue,
+      totalStockOut,
+      totalWaste,
+      totalTransactions: transactions.length,
+    },
     closing: closings,
   })
 })

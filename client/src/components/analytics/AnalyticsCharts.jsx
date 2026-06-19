@@ -41,22 +41,9 @@ function ChartShell({ title, hint, children, compact = false }) {
   )
 }
 
-export default function AnalyticsCharts({ dailySales, paymentMethods, bestSellers, weeklyOrders }) {
+export default function AnalyticsCharts({ paymentMethods, bestSellers, weeklyOrders }) {
   return (
     <section className="grid min-w-0 gap-4 lg:grid-cols-2">
-      <ChartShell title="Daily Sales" hint="Revenue movement across selected dates">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={dailySales} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgb(255 255 255 / 0.08)" vertical={false} />
-            <XAxis dataKey="date" tick={{ fill: '#a0a0a0', fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fill: '#a0a0a0', fontSize: 10 }} axisLine={false} tickLine={false} width={42} tickFormatter={(v) => `${v / 1000}k`} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(value) => formatCurrency(value)} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Line type="monotone" dataKey="sales" name="Sales" stroke="#ff7a00" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartShell>
-
       <ChartShell title="Payment Methods" hint="Cash and online contribution" compact>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>

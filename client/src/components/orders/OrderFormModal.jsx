@@ -27,6 +27,7 @@ const initialForm = {
   status: 'pending',
   paymentStatus: 'unpaid',
   paymentMethod: 'cash',
+  orderType: 'dine-in',
 }
 
 const emptyPicker = {
@@ -52,7 +53,7 @@ function getCartQty(cart, itemId) {
     .reduce((sum, line) => sum + (Number(line.quantity) || 0), 0)
 }
 
-export default function OrderFormModal({ open, onClose, onSaved }) {
+export default function OrderFormModal({ open, onClose, onSaved, editingOrder }) {
   const notify = useNotify()
   const [form, setForm] = useState(initialForm)
   const [cart, setCart] = useState([])
@@ -65,8 +66,33 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
 
   useEffect(() => {
     if (!open) return undefined
-    setForm(initialForm)
-    setCart([])
+    if (editingOrder) {
+      // Populate form and cart with existing order data
+      setForm({
+        customerName: editingOrder.customerName || '',
+        customerEmail: editingOrder.customerEmail || '',
+        customerPhone: editingOrder.customerPhone || '',
+        deliveryAddress: editingOrder.deliveryAddress || '',
+        notes: editingOrder.notes || '',
+        status: editingOrder.status || 'pending',
+        paymentStatus: editingOrder.paymentStatus || 'unpaid',
+        paymentMethod: editingOrder.paymentMethod || 'cash',
+        orderType: editingOrder.orderType || 'dine-in',
+      })
+      setCart(
+        (editingOrder.items || []).map((item) => ({
+          menuItem: item.menuItem,
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          variant: 'single',
+          id: `${item.menuItem}-single`,
+        }))
+      )
+    } else {
+      setForm(initialForm)
+      setCart([])
+    }
     setPicker(emptyPicker)
     setLoadingMenu(true)
     Promise.all([menuService.publicCategories(), menuService.publicItems()])
@@ -82,7 +108,7 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
       .catch((e) => notify.error(e.message))
       .finally(() => setLoadingMenu(false))
     return undefined
-  }, [open, notify])
+  }, [open, notify, editingOrder])
 
   const categoryItems = useMemo(() => {
     if (!picker.categoryId) return []
@@ -128,7 +154,6 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
     })
     setPicker((p) => ({ ...p, menuItemId: '', variant: 'regular' }))
     setVariantSheet(null)
-    notify.success('Added to cart', 1000)
   }
 
   function chooseItem(item) {
@@ -162,7 +187,7 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
 
     setSaving(true)
     try {
-      await orderService.create({
+      const orderData = {
         ...form,
         taxRatePercent: 0,
         items: cart.map((l) => ({
@@ -171,8 +196,15 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
           quantity: Number(l.quantity) || 1,
           unitPrice: Number(l.unitPrice) || 0,
         })),
-      })
-      notify.success('Order created')
+      }
+
+      if (editingOrder) {
+        await orderService.update(editingOrder._id, orderData)
+        notify.success('Order updated')
+      } else {
+        await orderService.create(orderData)
+        notify.success('Order created')
+      }
       onSaved?.()
       onClose()
     } catch (e) {
@@ -186,7 +218,7 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="New order"
+      title={editingOrder ? 'Edit order' : 'New order'}
       wide
       sheet
       footer={
@@ -286,18 +318,12 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
                         type="button"
                         onClick={() => chooseItem(item)}
                         className={cn(
-                          'group relative flex min-h-[164px] flex-col overflow-hidden rounded-2xl border text-left shadow-[0_10px_24px_rgba(0,0,0,0.22)] transition active:scale-[0.98]',
+                          'group relative flex min-h-[100px] flex-col overflow-hidden rounded-2xl border text-left shadow-[0_10px_24px_rgba(0,0,0,0.22)] transition active:scale-[0.98]',
                           picker.menuItemId === item._id
                             ? 'border-nb-neon-orange/70 ring-2 ring-nb-neon-orange/25'
                             : 'border-white/10 hover:border-nb-neon-orange/40'
                         )}
                       >
-                        <div className="relative flex h-20 items-center justify-center bg-gradient-to-br from-orange-100 to-orange-200">
-                          <FiImage className="h-10 w-10 text-nb-neon-orange" aria-hidden />
-                          <span className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-nb-neon-orange text-white shadow-md">
-                            <FiInfo className="h-4 w-4" aria-hidden />
-                          </span>
-                        </div>
                         <div className="flex flex-1 flex-col justify-between rounded-t-2xl bg-white px-2.5 py-3 text-center text-[#3d2b38]">
                           <div>
                             <p className="line-clamp-2 text-sm font-semibold leading-tight sm:text-base">{item.name}</p>
@@ -400,6 +426,14 @@ export default function OrderFormModal({ open, onClose, onSaved }) {
         <section className="space-y-3">
           <SectionTitle>Order details</SectionTitle>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Select
+              label="Order type"
+              value={form.orderType}
+              onChange={(e) => setForm({ ...form, orderType: e.target.value })}
+            >
+              <option value="dine-in">Dine-in</option>
+              <option value="takeaway">Takeaway</option>
+            </Select>
             <Select
               label="Payment status"
               value={form.paymentStatus}

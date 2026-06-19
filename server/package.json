@@ -7,7 +7,11 @@
     "dev": "node --watch server.js",
     "start": "node server.js",
     "seed": "node utils/seed.js",
-    "create-indexes": "node scripts/createIndexes.js"
+    "create-indexes": "node scripts/createIndexes.js",
+    "create-ttl-indexes": "node scripts/createTTLIndexes.js",
+    "verify-ttl": "node scripts/verifyTTLSetup.js",
+    "cleanup-logs": "node scripts/cleanupOldLogs.js",
+    "build-inventory-indexes": "node scripts/buildInventoryIndexes.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

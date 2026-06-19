@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { FiAlertTriangle, FiBox, FiCheckCircle, FiDownload, FiEdit2, FiFileText, FiMoon, FiPlus, FiSearch, FiSun, FiTrash2 } from 'react-icons/fi'
 import Card from '../../components/common/Card.jsx'
 import Button from '../../components/common/Button.jsx'
@@ -9,6 +9,7 @@ import Modal from '../../components/common/Modal.jsx'
 import Table, { Th, Tr, Td } from '../../components/common/Table.jsx'
 import Badge from '../../components/common/Badge.jsx'
 import Loader from '../../components/common/Loader.jsx'
+import CalendarDatePicker from '../../components/reservations/CalendarDatePicker.jsx'
 import api from '../../services/api.js'
 import { menuService } from '../../services/menuService.js'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -17,7 +18,7 @@ import { slugify } from '../../utils/helpers.js'
 
 const units = ['KG', 'LTR', 'PCS', 'GM', 'ML']
 const tabs = ['Dashboard', 'Products', 'Stock In', 'Stock Out', 'Waste', 'Recipes', 'Closing', 'Reports']
-const pageLengthOptions = [8, 15, 25, 50]
+const pageLengthOptions = [10, 25, 50, 100]
 const today = () => new Date().toISOString().slice(0, 10)
 const money = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n) || 0)
 const emptyDashboard = {
@@ -41,7 +42,7 @@ const emptyDashboard = {
 const emptyProduct = {
   sku: '',
   name: '',
-  category: 'Ingredients',
+  category: '',
   quantity: 0,
   minStock: 5,
   unit: 'PCS',
@@ -104,16 +105,20 @@ export default function Inventory() {
   const [dashboard, setDashboard] = useState(null)
   const [closingPreview, setClosingPreview] = useState(null)
   const [reports, setReports] = useState(null)
+  const [reportDateRange, setReportDateRange] = useState({ startDate: '', endDate: '' })
   const [menuItems, setMenuItems] = useState([])
   const [canManageRecipes, setCanManageRecipes] = useState(false)
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState('dark')
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [pageLength, setPageLength] = useState(8)
+  const [pageLength, setPageLength] = useState(10)
   const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 })
   const [productModal, setProductModal] = useState({ open: false, editing: null })
   const [productForm, setProductForm] = useState(emptyProduct)
+  const [bulkExpiryModal, setBulkExpiryModal] = useState({ open: false })
+  const [bulkExpiryData, setBulkExpiryData] = useState([])
   const [stockInForm, setStockInForm] = useState(emptyStockIn)
   const [stockOutForm, setStockOutForm] = useState(emptyStockOut)
   const [wasteForm, setWasteForm] = useState(emptyWaste)
@@ -125,13 +130,14 @@ export default function Inventory() {
     setLoading(true)
     try {
       const [inventoryRes, dashboardRes, txRes, previewRes, reportRes] = await Promise.all([
-        api.get('/api/inventory'),
+        api.get('/api/inventory', { params: { page, limit: pageLength, search: query, category: categoryFilter } }),
         api.get('/api/inventory/dashboard'),
         api.get('/api/inventory/transactions'),
         api.get('/api/inventory/closing/preview'),
         api.get('/api/inventory/reports'),
       ])
       setItems(inventoryRes.data.items)
+      setPagination(inventoryRes.data.pagination)
       setDashboard(dashboardRes.data)
       setTransactions(txRes.data.items)
       setClosingPreview(previewRes.data)
@@ -168,7 +174,7 @@ export default function Inventory() {
     } finally {
       setLoading(false)
     }
-  }, [canAccessMenu, notify, recipeMenuId, stockInForm.productId])
+  }, [canAccessMenu, notify, recipeMenuId, stockInForm.productId, page, pageLength, query])
 
   useEffect(() => {
     load()
@@ -188,17 +194,6 @@ export default function Inventory() {
   }, [recipeMenuId, menuItems])
 
   const categories = useMemo(() => [...new Set(items.map((it) => it.category || 'General'))], [items])
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return items.filter((it) => {
-      const matchesQuery = !q || [it.name, it.sku, it.supplier, it.category].some((v) => String(v || '').toLowerCase().includes(q))
-      const matchesCategory = !categoryFilter || it.category === categoryFilter
-      return matchesQuery && matchesCategory
-    })
-  }, [items, query, categoryFilter])
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageLength))
-  const currentPage = Math.min(page, totalPages)
-  const pagedItems = filteredItems.slice((currentPage - 1) * pageLength, currentPage * pageLength)
 
   useEffect(() => {
     setPage(1)
@@ -226,6 +221,31 @@ export default function Inventory() {
     } else {
       setProductForm(emptyProduct)
       setProductModal({ open: true, editing: null })
+    }
+  }
+
+  function openBulkExpiryModal() {
+    setBulkExpiryData(items.map((item) => ({
+      _id: item._id,
+      name: item.name,
+      sku: item.sku,
+      expiryDate: item.expiryDate ? item.expiryDate.slice(0, 10) : '',
+    })))
+    setBulkExpiryModal({ open: true })
+  }
+
+  async function saveBulkExpiry() {
+    try {
+      const updates = bulkExpiryData.filter((item) => item.expiryDate).map((item) => ({
+        _id: item._id,
+        expiryDate: item.expiryDate,
+      }))
+      await api.patch('/api/inventory/bulk-expiry', { updates })
+      notify.success('Expiry dates updated successfully')
+      setBulkExpiryModal({ open: false })
+      load()
+    } catch (e) {
+      notify.error(e.message)
     }
   }
 
@@ -319,6 +339,18 @@ export default function Inventory() {
     }
   }
 
+  async function loadReports() {
+    try {
+      const params = {}
+      if (reportDateRange.startDate) params.startDate = reportDateRange.startDate
+      if (reportDateRange.endDate) params.endDate = reportDateRange.endDate
+      const { data } = await api.get('/api/inventory/reports', { params })
+      setReports(data)
+    } catch (e) {
+      notify.error(e.message)
+    }
+  }
+
   function exportCsv(name, rows) {
     const safeRows = rows || []
     if (!safeRows.length) {
@@ -345,9 +377,10 @@ export default function Inventory() {
     { name: 'Waste', value: dashboard?.metrics?.wasteItemsToday || 0 },
   ]
   const statusData = [
-    { name: 'Healthy', value: Math.max(0, (dashboard?.metrics?.totalProducts || 0) - (dashboard?.metrics?.lowStockItems || 0)) },
+    { name: 'Healthy', value: Math.max(0, (dashboard?.metrics?.totalProducts || 0) - (dashboard?.metrics?.lowStockItems || 0) - (dashboard?.metrics?.outOfStockItems || 0) - (dashboard?.metrics?.expiredItems || 0)) },
     { name: 'Low', value: dashboard?.metrics?.lowStockItems || 0 },
     { name: 'Out', value: dashboard?.metrics?.outOfStockItems || 0 },
+    { name: 'Expired', value: dashboard?.metrics?.expiredItems || 0 },
   ]
   const pageTone = theme === 'light' ? 'bg-white/[0.08]' : ''
   const viewTabs = canManageRecipes ? tabs : tabs.filter((tab) => tab !== 'Recipes')
@@ -360,7 +393,7 @@ export default function Inventory() {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-nb-white">Inventory Management</h1>
-          <p className="text-sm text-nb-gray">Stock in, stock out, waste, recipes, closing stock, and reports.</p>
+          {/* <p className="text-sm text-nb-gray">Stock in, stock out, waste, recipes, closing stock, and reports.</p> */}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="ghost" onClick={() => setTheme((v) => (v === 'dark' ? 'light' : 'dark'))}>
@@ -407,15 +440,18 @@ export default function Inventory() {
           </div>
           <div className="grid gap-4 xl:grid-cols-2">
             <Card>
-              <h2 className="mb-4 font-heading text-lg font-semibold">Daily Movement</h2>
+              <h2 className="mb-4 font-heading text-lg font-semibold">Daily Movement (Last 7 Days)</h2>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
+                  <BarChart data={dashboard?.dailyMovement || []}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.08)" />
-                    <XAxis dataKey="name" stroke="#a0a0a0" />
+                    <XAxis dataKey="date" stroke="#a0a0a0" />
                     <YAxis stroke="#a0a0a0" />
                     <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,.12)' }} />
-                    <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#ff7a00" />
+                    <Legend />
+                    <Bar dataKey="stockIn" name="Stock In" radius={[4, 4, 0, 0]} fill="#22c55e" />
+                    <Bar dataKey="stockOut" name="Stock Out" radius={[4, 4, 0, 0]} fill="#ff7a00" />
+                    <Bar dataKey="waste" name="Waste" radius={[4, 4, 0, 0]} fill="#ef4444" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -426,9 +462,10 @@ export default function Inventory() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={statusData} dataKey="value" innerRadius={55} outerRadius={95} paddingAngle={4}>
-                      {['#22c55e', '#ffc857', '#ff3b30'].map((color) => <Cell key={color} fill={color} />)}
+                      {['#22c55e', '#ffc857', '#ff3b30', '#8b0000'].map((color) => <Cell key={color} fill={color} />)}
                     </Pie>
                     <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,.12)' }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -443,19 +480,29 @@ export default function Inventory() {
 
       {active === 'Products' && (
         <div className="space-y-4">
-          <Card className="grid gap-3 lg:grid-cols-[1fr_180px_120px_120px] lg:items-end">
-            <Input label="Search products" value={query} onChange={(e) => setQuery(e.target.value)} rightAddon={<FiSearch className="text-nb-gray" />} />
+          <Card className="grid gap-3 lg:grid-cols-[180px_180px_120px_auto] lg:items-end">
             <Select label="Category" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-              <option value="">All</option>
-              {categories.map((cat) => <option key={cat}>{cat}</option>)}
+              <option value="">Select category</option>
+              <option value="Frozen">Frozen</option>
+              <option value="Vegetables">Vegetables</option>
+              <option value="Cooking Material">Cooking Material</option>
+              <option value="Packaging">Packaging</option>
+              <option value="Cleaning material">Cleaning material</option>
+              <option value="Stationary">Stationary</option>
+              <option value="Masala">Masala</option>
+              <option value="Breads">Breads</option>
+              <option value="Cold drinks">Cold drinks</option>
+              <option value="Sauces">Sauces</option>
+              <option value="Syrups">Syrups</option>
             </Select>
             <Select label="Rows" value={pageLength} onChange={(e) => setPageLength(Number(e.target.value))}>
               {pageLengthOptions.map((n) => <option key={n}>{n}</option>)}
             </Select>
             <Button onClick={() => openProduct()}><FiPlus /> Product</Button>
+            <Button variant="ghost" onClick={() => openBulkExpiryModal()}><FiEdit2 /> Update Expiry</Button>
           </Card>
-          <ProductTable rows={pagedItems} onEdit={openProduct} onDelete={removeProduct} onRemoveExpired={removeExpired} />
-          <Pagination currentPage={currentPage} totalPages={totalPages} total={filteredItems.length} setPage={setPage} />
+          <ProductTable rows={items} onEdit={openProduct} onDelete={removeProduct} onRemoveExpired={removeExpired} />
+          <Pagination currentPage={pagination.page} totalPages={pagination.pages} total={pagination.total} setPage={setPage} />
         </div>
       )}
 
@@ -561,31 +608,111 @@ export default function Inventory() {
 
       {active === 'Reports' && (
         <div className="space-y-4">
+          <Card className="grid gap-3 lg:grid-cols-[1fr_180px_180px_auto] lg:items-end">
+            <Input label="Start Date" type="date" value={reportDateRange.startDate} onChange={(e) => setReportDateRange({ ...reportDateRange, startDate: e.target.value })} />
+            <Input label="End Date" type="date" value={reportDateRange.endDate} onChange={(e) => setReportDateRange({ ...reportDateRange, endDate: e.target.value })} />
+            <Button onClick={loadReports}>Apply Filter</Button>
+            <Button variant="ghost" onClick={() => { setReportDateRange({ startDate: '', endDate: '' }); loadReports() }}>Clear</Button>
+          </Card>
+          
+          {reports?.summary && (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Stat label="Total Stock In Value" value={money(reports.summary.totalStockInValue)} tone="success" />
+              <Stat label="Total Stock Out" value={reports.summary.totalStockOut} />
+              <Stat label="Total Waste" value={reports.summary.totalWaste} tone="warning" />
+              <Stat label="Total Transactions" value={reports.summary.totalTransactions} />
+            </div>
+          )}
+
+          <Card>
+            <h2 className="mb-4 font-heading text-lg font-semibold">Stock In Report</h2>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Date</Th>
+                  <Th>Product</Th>
+                  <Th>Quantity</Th>
+                  <Th>Supplier</Th>
+                  <Th>Invoice</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports?.stockIn?.map((tx) => (
+                  <Tr key={tx._id}>
+                    <Td>{new Date(tx.date).toLocaleDateString()}</Td>
+                    <Td>{tx.productName}</Td>
+                    <Td>{tx.quantity} {tx.unit}</Td>
+                    <Td>{tx.supplierName || '-'}</Td>
+                    <Td>{tx.invoiceNumber || '-'}</Td>
+                  </Tr>
+                ))}
+                {!reports?.stockIn?.length && <tr><Td colSpan="5" className="py-8 text-center text-nb-gray">No stock in records found</Td></tr>}
+              </tbody>
+            </Table>
+          </Card>
+
+          <Card>
+            <h2 className="mb-4 font-heading text-lg font-semibold">Stock Out Report</h2>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Date</Th>
+                  <Th>Product</Th>
+                  <Th>Quantity</Th>
+                  <Th>Reason</Th>
+                  <Th>Department</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports?.stockOut?.map((tx) => (
+                  <Tr key={tx._id}>
+                    <Td>{new Date(tx.date).toLocaleDateString()}</Td>
+                    <Td>{tx.productName}</Td>
+                    <Td>{tx.quantity} {tx.unit}</Td>
+                    <Td>{tx.reason}</Td>
+                    <Td>{tx.department}</Td>
+                  </Tr>
+                ))}
+                {!reports?.stockOut?.length && <tr><Td colSpan="5" className="py-8 text-center text-nb-gray">No stock out records found</Td></tr>}
+              </tbody>
+            </Table>
+          </Card>
+
+          <Card>
+            <h2 className="mb-4 font-heading text-lg font-semibold">Waste Report</h2>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Date</Th>
+                  <Th>Product</Th>
+                  <Th>Quantity</Th>
+                  <Th>Reason</Th>
+                  <Th>Staff</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports?.waste?.map((tx) => (
+                  <Tr key={tx._id}>
+                    <Td>{new Date(tx.date).toLocaleDateString()}</Td>
+                    <Td>{tx.productName}</Td>
+                    <Td>{tx.quantity} {tx.unit}</Td>
+                    <Td>{tx.reason}</Td>
+                    <Td>{tx.staffName || '-'}</Td>
+                  </Tr>
+                ))}
+                {!reports?.waste?.length && <tr><Td colSpan="5" className="py-8 text-center text-nb-gray">No waste records found</Td></tr>}
+              </tbody>
+            </Table>
+          </Card>
+
           <Card>
             <div className="flex flex-wrap gap-2">
               <Button variant="ghost" onClick={() => exportCsv('stock-in-report', reports?.stockIn)}><FiDownload /> Stock In Excel</Button>
               <Button variant="ghost" onClick={() => exportCsv('stock-out-report', reports?.stockOut)}><FiDownload /> Stock Out Excel</Button>
               <Button variant="ghost" onClick={() => exportCsv('waste-report', reports?.waste)}><FiDownload /> Waste Excel</Button>
-              <Button variant="ghost" onClick={() => exportCsv('inventory-summary', reports?.summary)}><FiDownload /> Summary Excel</Button>
-              <Button variant="ghost" onClick={() => exportCsv('daily-closing-report', reports?.closing)}><FiDownload /> Closing Excel</Button>
               <Button variant="ghost" onClick={exportPdf}><FiFileText /> PDF</Button>
             </div>
           </Card>
-          <Card>
-            <h2 className="mb-4 font-heading text-lg font-semibold">Movement Trend</h2>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={transactions.slice(0, 30).reverse().map((tx, idx) => ({ name: String(idx + 1), qty: tx.quantity }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.08)" />
-                  <XAxis dataKey="name" stroke="#a0a0a0" />
-                  <YAxis stroke="#a0a0a0" />
-                  <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,.12)' }} />
-                  <Line type="monotone" dataKey="qty" stroke="#ffc857" strokeWidth={3} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-          <TransactionTable rows={transactions.slice(0, 80)} />
         </div>
       )}
 
@@ -604,14 +731,57 @@ export default function Inventory() {
         <FieldGrid>
           <Input label="Product Name" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} />
           <Input label="SKU" value={productForm.sku} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value.toUpperCase() })} disabled={Boolean(productModal.editing)} />
-          <Input label="Category" value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} />
+          <Select label="Category" value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>
+            <option value="">Select category</option>
+            <option value="Frozen">Frozen</option>
+            <option value="Vegetables">Vegetables</option>
+            <option value="Cooking Material">Cooking Material</option>
+            <option value="Packaging">Packaging</option>
+            <option value="Cleaning material">Cleaning material</option>
+            <option value="Stationary">Stationary</option>
+            <option value="Masala">Masala</option>
+            <option value="Breads">Breads</option>
+            <option value="Cold drinks">Cold drinks</option>
+            <option value="Sauces">Sauces</option>
+            <option value="Syrups">Syrups</option>
+          </Select>
           <Input label="Current Stock" type="number" value={productForm.quantity} onChange={(e) => setProductForm({ ...productForm, quantity: Number(e.target.value) })} />
           <UnitSelect value={productForm.unit} onChange={(unit) => setProductForm({ ...productForm, unit })} />
           <Input label="Minimum Stock Level" type="number" value={productForm.minStock} onChange={(e) => setProductForm({ ...productForm, minStock: Number(e.target.value) })} />
-          <Input label="Expiry Date" type="date" value={productForm.expiryDate} onChange={(e) => setProductForm({ ...productForm, expiryDate: e.target.value })} />
+          <CalendarDatePicker label="Expiry Date" value={productForm.expiryDate} onChange={(val) => setProductForm({ ...productForm, expiryDate: val })} required={false} />
           <Input label="Purchase Price" type="number" value={productForm.purchasePrice} onChange={(e) => setProductForm({ ...productForm, purchasePrice: Number(e.target.value) })} />
           <Input label="Supplier Name" value={productForm.supplier} onChange={(e) => setProductForm({ ...productForm, supplier: e.target.value })} />
         </FieldGrid>
+      </Modal>
+
+      <Modal
+        open={bulkExpiryModal.open}
+        onClose={() => setBulkExpiryModal({ open: false })}
+        title="Bulk Expiry Update"
+        wide
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setBulkExpiryModal({ open: false })}>Cancel</Button>
+            <Button onClick={saveBulkExpiry}>Save All Expiry Dates</Button>
+          </div>
+        }
+      >
+        <div className="max-h-96 space-y-2 overflow-y-auto">
+          {bulkExpiryData.map((item) => (
+            <div key={item._id} className="grid gap-2 rounded-lg border border-white/10 bg-black/20 p-3 md:grid-cols-[1fr_140px]">
+              <div>
+                <p className="font-medium text-nb-white">{item.name}</p>
+                <p className="text-xs text-nb-gray">{item.sku}</p>
+              </div>
+              <CalendarDatePicker
+                label="Expiry Date"
+                value={item.expiryDate}
+                onChange={(val) => setBulkExpiryData((data) => data.map((d) => (d._id === item._id ? { ...d, expiryDate: val } : d)))}
+                required={false}
+              />
+            </div>
+          ))}
+        </div>
       </Modal>
     </div>
   )
@@ -645,13 +815,20 @@ function MovementCard({ title, button, onSubmit, children }) {
 }
 
 function ProductTable({ rows, onEdit, onDelete, onRemoveExpired }) {
+  const groupedRows = rows.reduce((acc, item) => {
+    const category = item.category || 'General'
+    if (!acc[category]) acc[category] = []
+    acc[category].push(item)
+    return acc
+  }, {})
+
   return (
     <Card>
       <Table>
         <thead>
           <tr>
-            <Th>Product</Th>
             <Th>Category</Th>
+            <Th>Product</Th>
             <Th>Stock</Th>
             <Th>Min</Th>
             <Th>Expiry</Th>
@@ -660,30 +837,39 @@ function ProductTable({ rows, onEdit, onDelete, onRemoveExpired }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((it) => {
-            const low = it.quantity <= it.minStock
-            const expired = it.expiryDate && new Date(it.expiryDate) < new Date()
-            return (
-              <Tr key={it._id} className={low || expired ? 'bg-nb-neon-red/[0.06]' : ''}>
-                <Td>
-                  <div className="font-medium">{it.name}</div>
-                  <div className="font-mono text-xs text-nb-gold">{it.sku}</div>
+          {Object.entries(groupedRows).map(([category, items]) => (
+            <React.Fragment key={`group-${category}`}>
+              <tr key={`cat-${category}`} className="bg-nb-neon-orange/20">
+                <Td colSpan="7" className="py-2 font-heading font-bold text-nb-neon-orange">
+                  {category}
                 </Td>
-                <Td>{it.category}</Td>
-                <Td><Badge tone={low ? 'danger' : 'success'}>{it.quantity} {it.unit}</Badge></Td>
-                <Td>{it.minStock}</Td>
-                <Td>{it.expiryDate ? new Date(it.expiryDate).toLocaleDateString() : 'None'} {expired && <Badge tone="danger">Expired</Badge>}</Td>
-                <Td>{money((it.quantity || 0) * (it.purchasePrice || 0))}</Td>
-                <Td className="text-right">
-                  <div className="flex justify-end gap-2">
-                    {expired && <Button size="sm" variant="danger" onClick={() => onRemoveExpired(it._id)}>Remove</Button>}
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(it)}><FiEdit2 /></Button>
-                    <Button size="sm" variant="danger" onClick={() => onDelete(it._id)}><FiTrash2 /></Button>
-                  </div>
-                </Td>
-              </Tr>
-            )
-          })}
+              </tr>
+              {items.map((it) => {
+                const low = it.quantity <= it.minStock
+                const expired = it.expiryDate && new Date(it.expiryDate) < new Date()
+                return (
+                  <Tr key={it._id} className={low || expired ? 'bg-nb-neon-red/[0.06]' : ''}>
+                    <Td>{it.category}</Td>
+                    <Td>
+                      <div className="font-medium">{it.name}</div>
+                      <div className="font-mono text-xs text-nb-gold">{it.sku}</div>
+                    </Td>
+                    <Td><Badge tone={low ? 'danger' : 'success'}>{it.quantity} {it.unit}</Badge></Td>
+                    <Td>{it.minStock}</Td>
+                    <Td>{it.expiryDate ? new Date(it.expiryDate).toLocaleDateString() : 'None'} {expired && <Badge tone="danger">Expired</Badge>}</Td>
+                    <Td>{money((it.quantity || 0) * (it.purchasePrice || 0))}</Td>
+                    <Td className="text-right">
+                      <div className="flex justify-end gap-2">
+                        {expired && <Button size="sm" variant="danger" onClick={() => onRemoveExpired(it._id)}>Remove</Button>}
+                        <Button size="sm" variant="ghost" onClick={() => onEdit(it)}><FiEdit2 /></Button>
+                        <Button size="sm" variant="danger" onClick={() => onDelete(it._id)}><FiTrash2 /></Button>
+                      </div>
+                    </Td>
+                  </Tr>
+                )
+              })}
+            </React.Fragment>
+          ))}
         </tbody>
       </Table>
     </Card>

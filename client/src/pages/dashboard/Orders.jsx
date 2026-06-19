@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FiPlus, FiRefreshCw } from 'react-icons/fi'
+import { FiMinus, FiPlus, FiRefreshCw } from 'react-icons/fi'
 import Card from '../../components/common/Card.jsx'
 import Button from '../../components/common/Button.jsx'
 import Select from '../../components/common/Select.jsx'
@@ -14,6 +14,7 @@ import { useNotify } from '../../context/NotificationContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 
 const PAYMENT_METHOD_OPTIONS = ['cash', 'online']
+const ORDER_TYPE_OPTIONS = ['dine-in', 'takeaway']
 const PAGE_LENGTH_OPTIONS = [10, 25, 50, 100]
 
 function OrderCard({ order, onPatch, onInvoice }) {
@@ -28,6 +29,17 @@ function OrderCard({ order, onPatch, onInvoice }) {
         <p className="shrink-0 text-lg font-bold text-nb-gold">{formatCurrency(order.total)}</p>
       </div>
       <div className="mt-4 grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">
+        <Select
+          label="Order type"
+          value={order.orderType || 'dine-in'}
+          onChange={(e) => onPatch(order._id, { orderType: e.target.value })}
+        >
+          {ORDER_TYPE_OPTIONS.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </Select>
         <Select
           label="Payment status"
           value={order.paymentStatus}
@@ -64,31 +76,28 @@ export default function Orders() {
   const notify = useNotify()
   const { user } = useAuth()
   const [items, setItems] = useState([])
+  const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 })
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingOrder, setEditingOrder] = useState(null)
+  const [expandedRow, setExpandedRow] = useState(null)
   const [pageLength, setPageLength] = useState(10)
   const [page, setPage] = useState(1)
   const showCreate = canCreateOrder(user?.role)
-  const totalPages = Math.max(1, Math.ceil(items.length / pageLength))
-  const currentPage = Math.min(page, totalPages)
-  const pagedItems = useMemo(() => {
-    const start = (currentPage - 1) * pageLength
-    return items.slice(start, start + pageLength)
-  }, [items, currentPage, pageLength])
-  const pageStart = items.length ? (currentPage - 1) * pageLength + 1 : 0
-  const pageEnd = Math.min(currentPage * pageLength, items.length)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await orderService.list()
+      const data = await orderService.list({ page, limit: pageLength })
       setItems(data.items)
+      setPagination(data.pagination)
     } catch (e) {
       notify.error(e.message)
     } finally {
       setLoading(false)
     }
-  }, [notify])
+  }, [notify, page, pageLength])
 
   useEffect(() => {
     load()
@@ -97,10 +106,6 @@ export default function Orders() {
   useEffect(() => {
     setPage(1)
   }, [pageLength])
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages)
-  }, [page, totalPages])
 
   async function patch(id, body) {
     try {
@@ -121,20 +126,28 @@ export default function Orders() {
     }
   }
 
+  async function openEdit(order) {
+    try {
+      const fullOrder = await orderService.get(order._id)
+      setEditingOrder(fullOrder)
+      setEditOpen(true)
+    } catch (e) {
+      notify.error(e.message)
+    }
+  }
+
+  function toggleExpand(rowId) {
+    setExpandedRow(expandedRow === rowId ? null : rowId)
+  }
+
+  const pageStart = pagination.total ? (pagination.page - 1) * pageLength + 1 : 0
+  const pageEnd = Math.min(pagination.page * pageLength, pagination.total)
+
   return (
     <div className="space-y-4 pb-4 lg:pb-0">
       <div className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <h1 className="font-heading text-xl font-bold text-nb-white sm:text-2xl">Orders</h1>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="!min-h-[44px] shrink-0 lg:hidden"
-            onClick={load}
-            aria-label="Refresh orders"
-          >
-            <FiRefreshCw className="h-5 w-5" />
-          </Button>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[auto_1fr] lg:items-end">
@@ -145,16 +158,17 @@ export default function Orders() {
               </option>
             ))}
           </Select>
-          <div className={cn('grid gap-2 sm:col-span-1 lg:justify-self-end', showCreate ? 'grid-cols-1 min-[420px]:grid-cols-2 lg:flex' : 'grid-cols-1')}>
+          <div className={cn('grid gap-2 sm:col-span-1 lg:justify-self-end', showCreate ? 'grid-cols-1 lg:flex' : 'grid-cols-1')}>
+            <Button variant="ghost" size="lg" fullWidth onClick={load} className="!min-h-[44px] lg:!min-w-[140px]">
+              <FiRefreshCw className="h-5 w-5" />
+              <span className="hidden lg:inline ml-2">Refresh</span>
+            </Button>
             {showCreate && (
-              <Button size="lg" fullWidth onClick={() => setCreateOpen(true)} className="!min-h-[52px] lg:!min-w-[170px]">
+              <Button size="lg" fullWidth onClick={() => setCreateOpen(true)} className="hidden lg:inline-flex !min-h-[52px] lg:!min-w-[170px]">
                 <FiPlus className="h-5 w-5 shrink-0" aria-hidden />
                 New order
               </Button>
             )}
-            <Button variant="ghost" size="lg" fullWidth onClick={load} className="hidden lg:inline-flex lg:!min-w-[140px]">
-              Refresh
-            </Button>
           </div>
         </div>
       </div>
@@ -168,7 +182,7 @@ export default function Orders() {
           <>
             {/* Mobile & tablet cards */}
             <div className="space-y-3 md:hidden">
-              {pagedItems.map((o) => (
+              {items.map((o) => (
                 <OrderCard key={o._id} order={o} onPatch={patch} onInvoice={invoice} />
               ))}
             </div>
@@ -183,12 +197,13 @@ export default function Orders() {
                     <Th>Total</Th>
                     <Th>Payment status</Th>
                     <Th>Payment method</Th>
+                    <Th>Order type</Th>
                     <Th>Created</Th>
                     <Th className="text-right">Actions</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedItems.map((o) => (
+                  {items.map((o) => (
                     <Tr key={o._id}>
                       <Td className="font-mono text-xs text-nb-gold">{o.orderNumber}</Td>
                       <Td>{o.customerName}</Td>
@@ -221,11 +236,46 @@ export default function Orders() {
                           ))}
                         </Select>
                       </Td>
+                      <Td>
+                        <Select
+                          value={o.orderType || 'dine-in'}
+                          onChange={(e) => patch(o._id, { orderType: e.target.value })}
+                          className="!min-h-[40px] !py-2 text-xs"
+                        >
+                          {ORDER_TYPE_OPTIONS.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </Select>
+                      </Td>
                       <Td className="text-xs text-nb-gray">{formatDate(o.createdAt)}</Td>
                       <Td className="text-right">
-                        <Button size="sm" variant="ghost" onClick={() => invoice(o._id)}>
-                          Invoice
-                        </Button>
+                        {expandedRow === o._id ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(o)}>
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => invoice(o._id)}>
+                              Invoice
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(o._id)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-nb-neon-red/30 bg-nb-neon-red/10 text-nb-neon-red hover:border-nb-neon-red/50 hover:bg-nb-neon-red/20"
+                            >
+                              <FiMinus className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(o._id)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-nb-neon-orange/30 bg-nb-neon-orange/10 text-nb-neon-orange hover:border-nb-neon-orange/50 hover:bg-nb-neon-orange/20"
+                          >
+                            <FiPlus className="h-4 w-4" />
+                          </button>
+                        )}
                       </Td>
                     </Tr>
                   ))}
@@ -234,16 +284,16 @@ export default function Orders() {
             </div>
             <div className="mt-4 flex flex-col gap-3 text-sm text-nb-gray sm:flex-row sm:items-center sm:justify-between">
               <span>
-                Showing {pageStart}-{pageEnd} of {items.length}
+                Showing {pageStart}-{pageEnd} of {pagination.total}
               </span>
               <div className="flex items-center justify-between gap-4 sm:justify-end">
-                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={currentPage <= 1} onClick={() => setPage((p) => p - 1)}>
+                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={!pagination.hasPrevPage} onClick={() => setPage((p) => p - 1)}>
                   Previous
                 </button>
                 <span>
-                  Page {currentPage} / {totalPages}
+                  Page {pagination.page} / {pagination.pages}
                 </span>
-                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={currentPage >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={!pagination.hasNextPage} onClick={() => setPage((p) => p + 1)}>
                   Next
                 </button>
               </div>
@@ -266,6 +316,7 @@ export default function Orders() {
       )}
 
       <OrderFormModal open={createOpen} onClose={() => setCreateOpen(false)} onSaved={load} />
+      <OrderFormModal open={editOpen} onClose={() => setEditOpen(false)} onSaved={load} editingOrder={editingOrder} />
     </div>
   )
 }

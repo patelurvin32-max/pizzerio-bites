@@ -14,11 +14,47 @@ async function notifyOrder(order, title) {
 }
 
 export const listOrders = asyncHandler(async (req, res) => {
+  // Get pagination parameters from query
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20))
+  
+  // Get filter parameters
   const status = req.query.status
+  const startDate = req.query.startDate ? new Date(req.query.startDate) : null
+  const endDate = req.query.endDate ? new Date(req.query.endDate) : null
+  
+  // Build filter object
   const filter = {}
   if (status) filter.status = status
-  const items = await Order.find(filter).sort({ createdAt: -1 }).limit(200).lean()
-  res.json({ items })
+  if (startDate || endDate) {
+    filter.createdAt = {}
+    if (startDate) filter.createdAt.$gte = startDate
+    if (endDate) filter.createdAt.$lte = endDate
+  }
+  
+  // Fetch data and count in parallel for better performance
+  const [items, total] = await Promise.all([
+    Order.find(filter)
+      .select('orderNumber customerName status total createdAt paymentStatus')  // Only needed fields
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+    Order.countDocuments(filter),
+  ])
+  
+  // Return response with pagination metadata
+  res.json({
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit) || 1,
+      hasNextPage: page < Math.ceil(total / limit),
+      hasPrevPage: page > 1,
+    }
+  })
 })
 
 export const getOrder = asyncHandler(async (req, res) => {

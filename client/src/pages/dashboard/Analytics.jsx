@@ -174,7 +174,6 @@ export default function Analytics() {
 
       <Suspense fallback={<AnalyticsSkeleton />}>
         <AnalyticsCharts
-          dailySales={analytics.dailySales}
           paymentMethods={analytics.paymentMethods}
           bestSellers={analytics.bestSellingProducts}
           weeklyOrders={analytics.weeklyOrders}

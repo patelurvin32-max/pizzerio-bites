@@ -6,10 +6,9 @@ import {
   FiPackage,
   FiShoppingBag,
   FiUsers,
-  FiCalendar,
-  FiTrendingUp,
   FiAlertTriangle,
-  FiMail,
+  FiCoffee,
+  FiShoppingCart,
 } from 'react-icons/fi'
 import api from '../../services/api.js'
 import { useFetch } from '../../hooks/useFetch.js'
@@ -134,30 +133,20 @@ function ManagementDashboard() {
           >
             Operations overview
           </motion.h1>
-          <p className="text-sm text-nb-gray">Live pulse across orders, revenue, guests, and inventory risk.</p>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total orders" value={summary.totalOrders} icon={FiShoppingBag} delay={0.02} hint="All-time volume" />
-        <StatCard
-          label="30-day revenue"
-          value={formatCurrency(summary.revenue30d)}
-          icon={FiTrendingUp}
-          delay={0.06}
-          hint="Paid orders only"
-        />
-        <StatCard label="Orders today" value={summary.ordersToday} icon={FiPackage} delay={0.1} hint="Since midnight (server)" />
-        <StatCard label="Pending reservations" value={summary.reservationsPending} icon={FiCalendar} delay={0.14} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2 xl:max-w-2xl">
+        <StatCard label="Dine-in orders" value={summary.dineInOrders} icon={FiCoffee} delay={0.02} hint="All-time dine-in volume" />
+        <StatCard label="Takeaway orders" value={summary.takeawayOrders} icon={FiShoppingCart} delay={0.06} hint="All-time takeaway volume" />
       </div>
 
       <div ref={chartsRef} className="grid gap-4 lg:grid-cols-3">
         <Card className="nb-dash-chart lg:col-span-2" glow>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="font-heading text-lg font-bold text-nb-white">Revenue trend</h2>
-            <span className="text-xs uppercase tracking-wide text-nb-gray">14 days</span>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-heading text-lg font-bold text-nb-white">Daily orders</h2>
           </div>
-          <SalesAreaChart data={sales.series} />
+          <OrdersBarChart data={sales.series} />
         </Card>
         <Card className="nb-dash-chart">
           <h2 className="font-heading text-lg font-bold text-nb-white">People & stock</h2>
@@ -193,13 +182,6 @@ function ManagementDashboard() {
           </div>
         </Card>
       </div>
-
-      <Card className="nb-dash-chart" glow>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-heading text-lg font-bold text-nb-white">Daily orders</h2>
-        </div>
-        <OrdersBarChart data={sales.series} />
-      </Card>
     </div>
   )
 }

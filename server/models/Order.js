@@ -32,6 +32,11 @@ const orderSchema = new mongoose.Schema(
       default: 'unpaid',
     },
     paymentMethod: { type: String, default: 'cash' },
+    orderType: {
+      type: String,
+      enum: ['dine-in', 'takeaway'],
+      default: 'dine-in',
+    },
     notes: { type: String, default: '' },
     deliveryAddress: { type: String, default: '' },
     assignedStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', default: null },
