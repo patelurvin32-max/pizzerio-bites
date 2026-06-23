@@ -42,7 +42,7 @@ function setRefreshCookie(res, rawRefresh) {
 }
 
 function clearRefreshCookie(res) {
-  res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' })
+  res.clearCookie(REFRESH_COOKIE, refreshCookieOptions())
 }
 
 function publicUser(user) {

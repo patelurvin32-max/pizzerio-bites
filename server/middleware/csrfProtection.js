@@ -9,7 +9,7 @@ const { generateCsrfToken: generateToken, doubleCsrfProtection } = doubleCsrf({
   cookieOptions: {
     httpOnly: true,
     secure: isProd,
-    sameSite: 'strict',
+    sameSite: isProd ? 'none' : 'lax',
     path: '/',
   },
   getCsrfTokenFromRequest: (req) => req.headers['x-csrf-token'],

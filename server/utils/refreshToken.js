@@ -20,7 +20,7 @@ export function refreshCookieOptions() {
   return {
     httpOnly: true,
     secure,
-    sameSite: secure ? 'strict' : 'lax',
+    sameSite: secure ? 'none' : 'lax',
     maxAge: REFRESH_DAYS * 24 * 60 * 60 * 1000,
     path: '/api/auth',
   }
