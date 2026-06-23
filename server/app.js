@@ -1,6 +1,7 @@
 import express from 'express'
 import path from 'path'
 import cors from 'cors'
+import compression from 'compression'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import cookieParser from 'cookie-parser'
@@ -8,6 +9,7 @@ import { fileURLToPath } from 'url'
 import { apiLimiter } from './middleware/rateLimiter.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
 import { logApiRequest } from './middleware/requestLogger.js'
+import { generateCsrfToken, validateCsrfToken } from './middleware/csrfProtection.js'
 
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
@@ -26,6 +28,7 @@ import inventoryRoutes from './routes/inventoryRoutes.js'
 import settingsRoutes from './routes/settingsRoutes.js'
 import uploadRoutes from './routes/uploadRoutes.js'
 import rolesRoutes from './routes/rolesRoutes.js'
+import attendanceRoutes from './routes/attendanceRoutes.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -47,9 +50,23 @@ const corsOrigins = (clientUrl || 'http://localhost:5173,http://localhost:5174')
   .filter(Boolean)
 
 app.use(
+  compression({
+    level: 6,
+    threshold: 1024,
+    filter: (req, res) => {
+      if (req.headers['x-no-compression']) {
+        return false
+      }
+      return compression.filter(req, res)
+    },
+  })
+)
+app.use(
   cors({
     origin: corsOrigins,
     credentials: true,
+    exposedHeaders: ['X-CSRF-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
   })
 )
 app.use(
@@ -72,6 +89,8 @@ app.use(
 app.use(morgan(isProd ? 'combined' : 'dev'))
 app.use(cookieParser())
 app.use(express.json({ limit: '1mb' }))
+app.use(generateCsrfToken)
+app.use(validateCsrfToken)
 app.use(logApiRequest)
 
 app.use(apiLimiter)
@@ -108,6 +127,7 @@ app.use('/api/inventory', inventoryRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/upload', uploadRoutes)
 app.use('/api/roles', rolesRoutes)
+app.use('/api/attendance', attendanceRoutes)
 
 app.use(notFound)
 app.use(errorHandler)

@@ -274,6 +274,24 @@ export const bulkUpdateExpiry = asyncHandler(async (req, res) => {
   res.json({ updated: results.length, items: results })
 })
 
+export const bulkUpdateCategory = asyncHandler(async (req, res) => {
+  const { oldCategory, newCategory } = req.body
+
+  if (!oldCategory) {
+    return res.status(400).json({ message: 'Old category is required' })
+  }
+
+  const filter = { category: oldCategory }
+  const update = { category: newCategory || null }
+
+  const result = await InventoryItem.updateMany(filter, update)
+
+  res.json({
+    message: newCategory ? `Updated ${result.modifiedCount} items from "${oldCategory}" to "${newCategory}"` : `Removed category from ${result.modifiedCount} items`,
+    modifiedCount: result.modifiedCount
+  })
+})
+
 export const deleteInventory = asyncHandler(async (req, res) => {
   await InventoryItem.findByIdAndDelete(req.params.id)
   res.json({ message: 'Deleted' })
@@ -282,14 +300,23 @@ export const deleteInventory = asyncHandler(async (req, res) => {
 export const dashboard = asyncHandler(async (_req, res) => {
   const { start, end } = dayRange()
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-  const [items, todayTransactions, weekTransactions, closing] = await Promise.all([
-    InventoryItem.find().lean(),
-    InventoryTransaction.find({ date: { $gte: start, $lte: end } }).lean(),
-    InventoryTransaction.find({ date: { $gte: sevenDaysAgo } }).lean(),
-    InventoryClosing.findOne({ dateKey: dateKey() }).lean(),
-  ])
   const expiredCutoff = new Date()
   const nearExpiryCutoff = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+
+  // Only fetch necessary fields for metrics
+  const [items, todayTransactions, weekTransactions, closing] = await Promise.all([
+    InventoryItem.find()
+      .select('quantity minStock expiryDate purchasePrice name sku')
+      .lean(),
+    InventoryTransaction.find({ date: { $gte: start, $lte: end } })
+      .select('type quantity')
+      .lean(),
+    InventoryTransaction.find({ date: { $gte: sevenDaysAgo } })
+      .select('type quantity date')
+      .lean(),
+    InventoryClosing.findOne({ dateKey: dateKey() }).lean(),
+  ])
+
   const totals = todayTransactions.reduce(
     (acc, tx) => {
       if (tx.type === 'stock_in') acc.stockIn += tx.quantity
@@ -320,6 +347,15 @@ export const dashboard = asyncHandler(async (_req, res) => {
     })
   }
 
+  // Limit low stock and near expiry alerts to top 20 each
+  const lowStockItems = items.filter((it) => it.quantity <= it.minStock)
+    .sort((a, b) => a.quantity - b.quantity)
+    .slice(0, 20)
+
+  const nearExpiryItems = items.filter((it) => it.expiryDate && new Date(it.expiryDate) <= nearExpiryCutoff)
+    .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))
+    .slice(0, 20)
+
   res.json({
     metrics: {
       totalProducts: items.length,
@@ -331,9 +367,9 @@ export const dashboard = asyncHandler(async (_req, res) => {
       wasteItemsToday: totals.waste,
       currentInventoryValue: items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.purchasePrice) || 0), 0),
     },
-    lowStock: items.filter((it) => it.quantity <= it.minStock),
-    nearExpiry: items.filter((it) => it.expiryDate && new Date(it.expiryDate) <= nearExpiryCutoff),
-    todayTransactions,
+    lowStock: lowStockItems,
+    nearExpiry: nearExpiryItems,
+    todayTransactions: todayTransactions.slice(0, 50),
     dailyMovement,
     closedToday: Boolean(closing),
     closing,
@@ -406,8 +442,13 @@ export const removeExpired = asyncHandler(async (req, res) => {
 async function buildClosingPreview(date) {
   const { start, end, key } = dayRange(date || new Date())
   const [items, transactions, closing] = await Promise.all([
-    InventoryItem.find().sort({ name: 1 }).lean(),
-    InventoryTransaction.find({ date: { $gte: start, $lte: end } }).lean(),
+    InventoryItem.find()
+      .select('name quantity unit purchasePrice')
+      .sort({ name: 1 })
+      .lean(),
+    InventoryTransaction.find({ date: { $gte: start, $lte: end } })
+      .select('type quantity')
+      .lean(),
     InventoryClosing.findOne({ dateKey: key }).lean(),
   ])
   const totals = transactions.reduce(
@@ -464,7 +505,7 @@ export const closeDailyStock = asyncHandler(async (req, res) => {
 
 export const reports = asyncHandler(async (req, res) => {
   let startDate, endDate
-  
+
   if (req.query.startDate && req.query.endDate) {
     startDate = new Date(req.query.startDate)
     endDate = new Date(req.query.endDate)
@@ -476,18 +517,27 @@ export const reports = asyncHandler(async (req, res) => {
   }
 
   const [transactions, closings, items] = await Promise.all([
-    InventoryTransaction.find({ date: { $gte: startDate, $lte: endDate } }).sort({ date: -1 }).lean(),
-    InventoryClosing.find({ date: { $gte: startDate, $lte: endDate } }).sort({ date: -1 }).lean(),
-    InventoryItem.find().sort({ name: 1 }).lean(),
+    InventoryTransaction.find({ date: { $gte: startDate, $lte: endDate } })
+      .select('type quantity item date')
+      .sort({ date: -1 })
+      .limit(1000)
+      .lean(),
+    InventoryClosing.find({ date: { $gte: startDate, $lte: endDate } })
+      .sort({ date: -1 })
+      .lean(),
+    InventoryItem.find()
+      .select('purchasePrice')
+      .lean(),
   ])
 
   const stockIn = transactions.filter((tx) => tx.type === 'stock_in')
   const stockOut = transactions.filter((tx) => tx.type === 'stock_out' || tx.type === 'order_deduction')
   const waste = transactions.filter((tx) => tx.type === 'waste')
 
+  const itemsMap = new Map(items.map((i) => [String(i._id), i.purchasePrice || 0]))
+
   const totalStockInValue = stockIn.reduce((sum, tx) => {
-    const item = items.find((i) => String(i._id) === String(tx.item))
-    const price = item?.purchasePrice || 0
+    const price = itemsMap.get(String(tx.item)) || 0
     return sum + (Number(tx.quantity) || 0) * price
   }, 0)
 
@@ -495,9 +545,9 @@ export const reports = asyncHandler(async (req, res) => {
   const totalWaste = waste.reduce((sum, tx) => sum + (Number(tx.quantity) || 0), 0)
 
   res.json({
-    stockIn,
-    stockOut,
-    waste,
+    stockIn: stockIn.slice(0, 500),
+    stockOut: stockOut.slice(0, 500),
+    waste: waste.slice(0, 500),
     summary: {
       totalStockInValue,
       totalStockOut,

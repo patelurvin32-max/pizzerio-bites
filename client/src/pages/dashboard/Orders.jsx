@@ -7,6 +7,7 @@ import Table, { Th, Tr, Td } from '../../components/common/Table.jsx'
 import Loader from '../../components/common/Loader.jsx'
 import OrderFormModal from '../../components/orders/OrderFormModal.jsx'
 import OrderTotal from '../../components/orders/OrderTotal.jsx'
+import InvoiceModal from '../../components/orders/InvoiceModal.jsx'
 import { orderService } from '../../services/orderService.js'
 import { ORDER_STATUS_OPTIONS, PAYMENT_STATUS_OPTIONS, canCreateOrder } from '../../utils/constants.js'
 import { cn, formatCurrency, formatDate } from '../../utils/helpers.js'
@@ -17,7 +18,7 @@ const PAYMENT_METHOD_OPTIONS = ['cash', 'online']
 const ORDER_TYPE_OPTIONS = ['dine-in', 'takeaway']
 const PAGE_LENGTH_OPTIONS = [10, 25, 50, 100]
 
-function OrderCard({ order, onPatch, onInvoice }) {
+function OrderCard({ order, onPatch, onEdit, onInvoice }) {
   return (
     <article className="rounded-2xl border border-white/10 bg-black/20 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -63,7 +64,10 @@ function OrderCard({ order, onPatch, onInvoice }) {
           ))}
         </Select>
       </div>
-      <div className="mt-3">
+      <div className="mt-3 flex gap-2">
+        <Button size="lg" variant="ghost" fullWidth onClick={() => onEdit(order)}>
+          Edit
+        </Button>
         <Button size="lg" variant="ghost" fullWidth onClick={() => onInvoice(order._id)}>
           Invoice
         </Button>
@@ -84,6 +88,8 @@ export default function Orders() {
   const [expandedRow, setExpandedRow] = useState(null)
   const [pageLength, setPageLength] = useState(10)
   const [page, setPage] = useState(1)
+  const [invoiceOpen, setInvoiceOpen] = useState(false)
+  const [invoiceData, setInvoiceData] = useState(null)
   const showCreate = canCreateOrder(user?.role)
 
   const load = useCallback(async () => {
@@ -120,7 +126,8 @@ export default function Orders() {
   async function invoice(id) {
     try {
       const data = await orderService.invoice(id)
-      notify.info(`Invoice ${data.invoiceNumber} ready — export wiring can attach PDF.`)
+      setInvoiceData(data)
+      setInvoiceOpen(true)
     } catch (e) {
       notify.error(e.message)
     }
@@ -183,7 +190,7 @@ export default function Orders() {
             {/* Mobile & tablet cards */}
             <div className="space-y-3 md:hidden">
               {items.map((o) => (
-                <OrderCard key={o._id} order={o} onPatch={patch} onInvoice={invoice} />
+                <OrderCard key={o._id} order={o} onPatch={patch} onEdit={openEdit} onInvoice={invoice} />
               ))}
             </div>
 
@@ -317,6 +324,7 @@ export default function Orders() {
 
       <OrderFormModal open={createOpen} onClose={() => setCreateOpen(false)} onSaved={load} />
       <OrderFormModal open={editOpen} onClose={() => setEditOpen(false)} onSaved={load} editingOrder={editingOrder} />
+      <InvoiceModal open={invoiceOpen} onClose={() => setInvoiceOpen(false)} data={invoiceData} />
     </div>
   )
 }

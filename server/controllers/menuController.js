@@ -17,7 +17,7 @@ export const listPublicCategories = asyncHandler(async (_req, res) => {
 export const listPublicItems = asyncHandler(async (req, res) => {
   const filter = { available: true }
   if (req.query.category) {
-    const cat = await Category.findOne({ slug: req.query.category, active: true })
+    const cat = await Category.findOne({ slug: req.query.category, active: true }).select('_id').lean()
     if (cat) filter.category = cat._id
   }
   if (req.query.featured === 'true') filter.featured = true

@@ -8,11 +8,15 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [permissions, setPermissions] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [todayAttendance, setTodayAttendance] = useState(null)
+  const [showAttendancePopup, setShowAttendancePopup] = useState(false)
 
   const logout = useCallback(async () => {
     await authApi.logout()
     setUser(null)
     setPermissions(null)
+    setTodayAttendance(null)
+    setShowAttendancePopup(false)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -43,6 +47,13 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const data = await authApi.login({ email, password })
     setUser(data.user)
+    setTodayAttendance(data.todayAttendance || null)
+    
+    // Show attendance popup for Reception users if they haven't checked in today
+    if (data.user.role === 'RECEPTION' && (!data.todayAttendance || !data.todayAttendance.check_in_time)) {
+      setShowAttendancePopup(true)
+    }
+    
     try {
       const p = await authApi.fetchRolePermissions()
       setPermissions(p.permissions || {})
@@ -61,8 +72,12 @@ export function AuthProvider({ children }) {
       logout,
       refresh,
       isAuthenticated: Boolean(user),
+      todayAttendance,
+      setTodayAttendance,
+      showAttendancePopup,
+      setShowAttendancePopup,
     }),
-    [user, permissions, loading, login, logout, refresh]
+    [user, permissions, loading, login, logout, refresh, todayAttendance, showAttendancePopup]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

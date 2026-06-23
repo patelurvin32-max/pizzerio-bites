@@ -1,5 +1,6 @@
 import Order from '../models/Order.js'
 import Notification from '../models/Notification.js'
+import AppSettings from '../models/AppSettings.js'
 import { asyncHandler } from '../utils/asyncHandler.js'
 import { pick, ORDER_UPDATE_FIELDS } from '../utils/pick.js'
 import { deductInventoryForOrder } from './inventoryController.js'
@@ -130,7 +131,7 @@ export const createOrder = asyncHandler(async (req, res) => {
 })
 
 export const updateOrder = asyncHandler(async (req, res) => {
-  const prev = await Order.findById(req.params.id)
+  const prev = await Order.findById(req.params.id).select('status').lean()
   if (!prev) return res.status(404).json({ message: 'Not found' })
   const payload = pick(req.body, ORDER_UPDATE_FIELDS)
   const order = await Order.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true })
@@ -148,9 +149,22 @@ export const deleteOrder = asyncHandler(async (req, res) => {
 export const invoice = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id).lean()
   if (!order) return res.status(404).json({ message: 'Not found' })
+
+  const restaurantSetting = await AppSettings.findOne({ key: 'restaurantInfo' }).lean()
+  const restaurant = restaurantSetting?.value || {
+    name: 'Pizzerio Bites',
+    address: 'G-5, Welcome point, Varkund, Dadra and Nagar Haveli and Daman and Diu 396210',
+    phone: '+91 96876 60072',
+    email: '',
+    gstin: '',
+    footerNote: 'Thank You! Visit Again 🍕',
+  }
+
   res.json({
     invoiceNumber: order.orderNumber,
     issuedAt: new Date().toISOString(),
+    restaurant,
     order,
+    gstNote: 'Inclusive of GST',
   })
 })

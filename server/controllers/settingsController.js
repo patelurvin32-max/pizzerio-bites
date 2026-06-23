@@ -19,8 +19,11 @@ function paymentResponse(doc) {
 }
 
 export const getPaymentSettings = asyncHandler(async (_req, res) => {
-  let doc = await PaymentSettings.findOne()
-  if (!doc) doc = await PaymentSettings.create({})
+  let doc = await PaymentSettings.findOne().lean()
+  if (!doc) {
+    const created = await PaymentSettings.create({})
+    doc = created.toObject()
+  }
   res.json(paymentResponse(doc))
 })
 

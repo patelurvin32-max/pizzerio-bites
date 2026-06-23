@@ -24,6 +24,7 @@ const Settings = lazy(() => import('../pages/dashboard/Settings.jsx'))
 const CMS = lazy(() => import('../pages/dashboard/CMS.jsx'))
 const Inventory = lazy(() => import('../pages/dashboard/Inventory.jsx'))
 const Notifications = lazy(() => import('../pages/dashboard/Notifications.jsx'))
+const Attendance = lazy(() => import('../pages/dashboard/Attendance.jsx'))
 
 const mgmt = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER]
 const mgmtReception = [...mgmt, ROLES.RECEPTION]
@@ -60,6 +61,16 @@ export default function AppRoutes() {
             element={
               <SuspensePage>
                 <Notifications />
+              </SuspensePage>
+            }
+          />
+          <Route
+            path="/dashboard/attendance"
+            element={
+              <SuspensePage>
+                <RoleRoute roles={mgmtReception}>
+                  <Attendance />
+                </RoleRoute>
               </SuspensePage>
             }
           />

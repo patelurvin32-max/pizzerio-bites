@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { FiAlertTriangle, FiBox, FiCheckCircle, FiDownload, FiEdit2, FiFileText, FiMoon, FiPlus, FiSearch, FiSun, FiTrash2 } from 'react-icons/fi'
 import Card from '../../components/common/Card.jsx'
@@ -50,17 +50,17 @@ const emptyProduct = {
   expiryDate: '',
   purchasePrice: 0,
 }
-const emptyStockIn = { productId: '', quantity: 0, unit: 'PCS', purchasePrice: 0, supplierName: '', invoiceNumber: '', date: today(), notes: '' }
-const emptyStockOut = { productId: '', quantity: 0, unit: 'PCS', reason: 'Kitchen Use', department: 'Kitchen', date: today(), approvedBy: '' }
-const emptyWaste = { productId: '', quantity: 0, unit: 'PCS', reason: 'Expired', date: today(), staffName: '' }
+const emptyStockIn = { category: '', productId: '', quantity: 0, unit: 'PCS', purchasePrice: 0, supplierName: '', invoiceNumber: '', date: today(), notes: '' }
+const emptyStockOut = { category: '', productId: '', quantity: 0, unit: 'PCS', reason: 'Kitchen Use', department: 'Kitchen', date: today(), approvedBy: '' }
+const emptyWaste = { category: '', productId: '', quantity: 0, unit: 'PCS', reason: 'Expired', date: today(), staffName: '' }
 const emptyClosing = { date: today(), notes: '', confirmed: false, closedBy: '' }
 
 function Stat({ label, value, tone = 'default', icon: Icon = FiBox }) {
   const tones = {
-    default: 'from-white/10 to-white/[0.02] text-nb-white',
-    warning: 'from-nb-gold/25 to-white/[0.02] text-nb-gold',
-    danger: 'from-nb-neon-red/25 to-white/[0.02] text-nb-neon-red',
-    success: 'from-emerald-400/20 to-white/[0.02] text-emerald-300',
+    default: 'from-nb-maroon/8 to-nb-surface text-nb-white',
+    warning: 'from-nb-gold/25 to-nb-surface text-nb-gold',
+    danger: 'from-nb-neon-red/25 to-nb-surface text-nb-neon-red',
+    success: 'from-emerald-400/20 to-nb-surface text-emerald-300',
   }
   return (
     <Card className={`bg-gradient-to-br ${tones[tone]}`}>
@@ -97,10 +97,12 @@ function TextArea({ label, value, onChange, className = '' }) {
 
 export default function Inventory() {
   const notify = useNotify()
-  const { permissions } = useAuth()
+  const { permissions, user } = useAuth()
   const canAccessMenu = Boolean(permissions?.menu)
+  const isReception = user?.role === 'RECEPTION'
   const [active, setActive] = useState('Dashboard')
   const [items, setItems] = useState([])
+  const [allProducts, setAllProducts] = useState([])
   const [transactions, setTransactions] = useState([])
   const [dashboard, setDashboard] = useState(null)
   const [closingPreview, setClosingPreview] = useState(null)
@@ -124,37 +126,32 @@ export default function Inventory() {
   const [wasteForm, setWasteForm] = useState(emptyWaste)
   const [closingForm, setClosingForm] = useState(emptyClosing)
   const [recipeMenuId, setRecipeMenuId] = useState('')
+  const [recipeMenuCategory, setRecipeMenuCategory] = useState('')
   const [recipeRows, setRecipeRows] = useState([])
+  const [categoryModal, setCategoryModal] = useState({ open: false, editing: null })
+  const [categoryForm, setCategoryForm] = useState({ name: '' })
+  const formsInitialized = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [inventoryRes, dashboardRes, txRes, previewRes, reportRes] = await Promise.all([
+      const [inventoryRes, dashboardRes, txRes] = await Promise.all([
         api.get('/api/inventory', { params: { page, limit: pageLength, search: query, category: categoryFilter } }),
         api.get('/api/inventory/dashboard'),
         api.get('/api/inventory/transactions'),
-        api.get('/api/inventory/closing/preview'),
-        api.get('/api/inventory/reports'),
       ])
       setItems(inventoryRes.data.items)
+      setAllProducts(inventoryRes.data.items)
       setPagination(inventoryRes.data.pagination)
       setDashboard(dashboardRes.data)
       setTransactions(txRes.data.items)
-      setClosingPreview(previewRes.data)
-      setReports(reportRes.data)
-      if (!stockInForm.productId && inventoryRes.data.items[0]) {
-        const first = inventoryRes.data.items[0]
-        setStockInForm((f) => ({ ...f, productId: first._id, unit: first.unit }))
-        setStockOutForm((f) => ({ ...f, productId: first._id, unit: first.unit }))
-        setWasteForm((f) => ({ ...f, productId: first._id, unit: first.unit }))
-      }
 
-      if (canAccessMenu) {
+      if (canAccessMenu || isReception) {
         try {
           const menuRes = await menuService.items()
           setMenuItems(menuRes.items)
           setCanManageRecipes(true)
-          if (!recipeMenuId && menuRes.items[0]) setRecipeMenuId(menuRes.items[0]._id)
+          setRecipeMenuId((id) => id || menuRes.items[0]?._id || '')
         } catch (menuError) {
           if (menuError.message === 'Forbidden') {
             setMenuItems([])
@@ -174,11 +171,27 @@ export default function Inventory() {
     } finally {
       setLoading(false)
     }
-  }, [canAccessMenu, notify, recipeMenuId, stockInForm.productId, page, pageLength, query])
+  }, [canAccessMenu, isReception, notify, page, pageLength, query, categoryFilter])
 
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (active !== 'Stock In' && active !== 'Stock Out' && active !== 'Waste' && active !== 'Recipes') return
+    api.get('/api/inventory', { params: { limit: 1000, select: 'name sku category unit' } })
+      .then((res) => setAllProducts(res.data.items))
+      .catch((e) => console.error('Failed to load all products:', e))
+  }, [active])
+
+  useEffect(() => {
+    if (formsInitialized.current || !allProducts.length) return
+    const first = allProducts[0]
+    setStockInForm((f) => (f.productId ? f : { ...f, productId: first._id, unit: first.unit }))
+    setStockOutForm((f) => (f.productId ? f : { ...f, productId: first._id, unit: first.unit }))
+    setWasteForm((f) => (f.productId ? f : { ...f, productId: first._id, unit: first.unit }))
+    formsInitialized.current = true
+  }, [allProducts])
 
   useEffect(() => {
     if (!canManageRecipes && active === 'Recipes') setActive('Dashboard')
@@ -200,7 +213,7 @@ export default function Inventory() {
   }, [query, categoryFilter, pageLength])
 
   function selectProduct(setter, productId) {
-    const product = items.find((it) => it._id === productId)
+    const product = allProducts.find((it) => it._id === productId)
     setter((form) => ({ ...form, productId, unit: product?.unit || form.unit }))
   }
 
@@ -232,6 +245,56 @@ export default function Inventory() {
       expiryDate: item.expiryDate ? item.expiryDate.slice(0, 10) : '',
     })))
     setBulkExpiryModal({ open: true })
+  }
+
+  function openCategoryModal(categoryName = null) {
+    if (categoryName) {
+      setCategoryForm({ name: categoryName })
+      setCategoryModal({ open: true, editing: categoryName })
+    } else {
+      setCategoryForm({ name: '' })
+      setCategoryModal({ open: true, editing: null })
+    }
+  }
+
+  async function saveCategory() {
+    if (!categoryForm.name.trim()) {
+      notify.error('Category name is required')
+      return
+    }
+
+    const newName = categoryForm.name.trim()
+    const oldName = categoryModal.editing
+
+    if (oldName) {
+      // Editing existing category - update all items with that category
+      try {
+        await api.patch('/api/inventory/bulk-category', { oldCategory: oldName, newCategory: newName })
+        notify.success('Category updated successfully')
+        setCategoryModal({ open: false, editing: null })
+        setCategoryForm({ name: '' })
+        load()
+      } catch (e) {
+        notify.error(e.message)
+      }
+    } else {
+      // Adding new category - just show success (categories are created when items are added)
+      notify.success('Category added. You can now use it when creating products.')
+      setCategoryModal({ open: false, editing: null })
+      setCategoryForm({ name: '' })
+    }
+  }
+
+  async function deleteCategory(categoryName) {
+    if (!window.confirm(`Delete category "${categoryName}"? This will remove the category from all products using it.`)) return
+
+    try {
+      await api.patch('/api/inventory/bulk-category', { oldCategory: categoryName, newCategory: '' })
+      notify.success('Category deleted')
+      load()
+    } catch (e) {
+      notify.error(e.message)
+    }
   }
 
   async function saveBulkExpiry() {
@@ -328,6 +391,13 @@ export default function Inventory() {
     }
   }
 
+  // Lazy load closing preview when Closing tab is active
+  useEffect(() => {
+    if (active === 'Closing' && !closingPreview) {
+      refreshClosing()
+    }
+  }, [active])
+
   async function closeDailyStock() {
     try {
       await api.post('/api/inventory/closing', closingForm)
@@ -350,6 +420,13 @@ export default function Inventory() {
       notify.error(e.message)
     }
   }
+
+  // Lazy load reports when Reports tab is active
+  useEffect(() => {
+    if (active === 'Reports' && !reports) {
+      loadReports()
+    }
+  }, [active])
 
   function exportCsv(name, rows) {
     const safeRows = rows || []
@@ -480,7 +557,7 @@ export default function Inventory() {
 
       {active === 'Products' && (
         <div className="space-y-4">
-          <Card className="grid gap-3 lg:grid-cols-[180px_180px_120px_auto] lg:items-end">
+          <Card className="grid gap-3 lg:grid-cols-[180px_180px_120px_120px_auto] lg:items-end">
             <Select label="Category" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
               <option value="">Select category</option>
               <option value="Frozen">Frozen</option>
@@ -498,19 +575,33 @@ export default function Inventory() {
             <Select label="Rows" value={pageLength} onChange={(e) => setPageLength(Number(e.target.value))}>
               {pageLengthOptions.map((n) => <option key={n}>{n}</option>)}
             </Select>
+            <Button onClick={() => openCategoryModal()}><FiPlus /> Category</Button>
             <Button onClick={() => openProduct()}><FiPlus /> Product</Button>
             <Button variant="ghost" onClick={() => openBulkExpiryModal()}><FiEdit2 /> Update Expiry</Button>
           </Card>
-          <ProductTable rows={items} onEdit={openProduct} onDelete={removeProduct} onRemoveExpired={removeExpired} />
+          <ProductTable rows={items} onEdit={openProduct} onDelete={removeProduct} onRemoveExpired={removeExpired} onEditCategory={openCategoryModal} onDeleteCategory={deleteCategory} />
           <Pagination currentPage={pagination.page} totalPages={pagination.pages} total={pagination.total} setPage={setPage} />
         </div>
       )}
 
       {active === 'Stock In' && (
-        <MovementCard title="Add Stock In" button="Add Stock In" onSubmit={() => submitMovement('/api/inventory/stock-in', stockInForm, 'Stock added', () => setStockInForm({ ...emptyStockIn, productId: stockInForm.productId, unit: stockInForm.unit }))}>
+        <MovementCard title="Add Stock In" button="Add Stock In" onSubmit={() => submitMovement('/api/inventory/stock-in', stockInForm, 'Stock added', () => setStockInForm({ ...emptyStockIn, category: stockInForm.category }))}>
           <FieldGrid>
-            <ProductSelect label="Product Name" items={items} value={stockInForm.productId} onChange={(id) => selectProduct(setStockInForm, id)} />
-            <Input label="Category" value={items.find((it) => it._id === stockInForm.productId)?.category || ''} disabled />
+            <Select label="Category" value={stockInForm.category} onChange={(e) => setStockInForm((f) => ({ ...f, category: e.target.value, productId: '' }))}>
+              <option value="">Select category</option>
+              <option value="Frozen">Frozen</option>
+              <option value="Vegetables">Vegetables</option>
+              <option value="Cooking Material">Cooking Material</option>
+              <option value="Packaging">Packaging</option>
+              <option value="Cleaning material">Cleaning material</option>
+              <option value="Stationary">Stationary</option>
+              <option value="Masala">Masala</option>
+              <option value="Breads">Breads</option>
+              <option value="Cold drinks">Cold drinks</option>
+              <option value="Sauces">Sauces</option>
+              <option value="Syrups">Syrups</option>
+            </Select>
+            <ProductSelect label="Product Name" items={stockInForm.category ? allProducts.filter((it) => it.category === stockInForm.category) : allProducts} value={stockInForm.productId} onChange={(id) => selectProduct(setStockInForm, id)} />
             <Input label="Quantity Added" type="number" value={stockInForm.quantity} onChange={(e) => setStockInForm({ ...stockInForm, quantity: Number(e.target.value) })} />
             <UnitSelect value={stockInForm.unit} onChange={(unit) => setStockInForm({ ...stockInForm, unit })} />
             <Input label="Purchase Price" type="number" value={stockInForm.purchasePrice} onChange={(e) => setStockInForm({ ...stockInForm, purchasePrice: Number(e.target.value) })} />
@@ -523,9 +614,23 @@ export default function Inventory() {
       )}
 
       {active === 'Stock Out' && (
-        <MovementCard title="Manual Stock Out" button="Add Stock Out" onSubmit={() => submitMovement('/api/inventory/stock-out', stockOutForm, 'Stock deducted', () => setStockOutForm({ ...emptyStockOut, productId: stockOutForm.productId, unit: stockOutForm.unit }))}>
+        <MovementCard title="Manual Stock Out" button="Add Stock Out" onSubmit={() => submitMovement('/api/inventory/stock-out', stockOutForm, 'Stock deducted', () => setStockOutForm({ ...emptyStockOut, category: stockOutForm.category }))}>
           <FieldGrid>
-            <ProductSelect label="Product Name" items={items} value={stockOutForm.productId} onChange={(id) => selectProduct(setStockOutForm, id)} />
+            <Select label="Category" value={stockOutForm.category} onChange={(e) => setStockOutForm((f) => ({ ...f, category: e.target.value, productId: '' }))}>
+              <option value="">Select category</option>
+              <option value="Frozen">Frozen</option>
+              <option value="Vegetables">Vegetables</option>
+              <option value="Cooking Material">Cooking Material</option>
+              <option value="Packaging">Packaging</option>
+              <option value="Cleaning material">Cleaning material</option>
+              <option value="Stationary">Stationary</option>
+              <option value="Masala">Masala</option>
+              <option value="Breads">Breads</option>
+              <option value="Cold drinks">Cold drinks</option>
+              <option value="Sauces">Sauces</option>
+              <option value="Syrups">Syrups</option>
+            </Select>
+            <ProductSelect label="Product Name" items={stockOutForm.category ? allProducts.filter((it) => it.category === stockOutForm.category) : allProducts} value={stockOutForm.productId} onChange={(id) => selectProduct(setStockOutForm, id)} />
             <Input label="Quantity Used" type="number" value={stockOutForm.quantity} onChange={(e) => setStockOutForm({ ...stockOutForm, quantity: Number(e.target.value) })} />
             <UnitSelect value={stockOutForm.unit} onChange={(unit) => setStockOutForm({ ...stockOutForm, unit })} />
             <Select label="Reason" value={stockOutForm.reason} onChange={(e) => setStockOutForm({ ...stockOutForm, reason: e.target.value })}>
@@ -541,9 +646,23 @@ export default function Inventory() {
       )}
 
       {active === 'Waste' && (
-        <MovementCard title="Waste and Damage" button="Add Waste Entry" onSubmit={() => submitMovement('/api/inventory/waste', wasteForm, 'Waste recorded', () => setWasteForm({ ...emptyWaste, productId: wasteForm.productId, unit: wasteForm.unit }))}>
+        <MovementCard title="Waste and Damage" button="Add Waste Entry" onSubmit={() => submitMovement('/api/inventory/waste', wasteForm, 'Waste recorded', () => setWasteForm({ ...emptyWaste, category: wasteForm.category }))}>
           <FieldGrid>
-            <ProductSelect label="Product Name" items={items} value={wasteForm.productId} onChange={(id) => selectProduct(setWasteForm, id)} />
+            <Select label="Category" value={wasteForm.category} onChange={(e) => setWasteForm((f) => ({ ...f, category: e.target.value, productId: '' }))}>
+              <option value="">Select category</option>
+              <option value="Frozen">Frozen</option>
+              <option value="Vegetables">Vegetables</option>
+              <option value="Cooking Material">Cooking Material</option>
+              <option value="Packaging">Packaging</option>
+              <option value="Cleaning material">Cleaning material</option>
+              <option value="Stationary">Stationary</option>
+              <option value="Masala">Masala</option>
+              <option value="Breads">Breads</option>
+              <option value="Cold drinks">Cold drinks</option>
+              <option value="Sauces">Sauces</option>
+              <option value="Syrups">Syrups</option>
+            </Select>
+            <ProductSelect label="Product Name" items={wasteForm.category ? allProducts.filter((it) => it.category === wasteForm.category) : allProducts} value={wasteForm.productId} onChange={(id) => selectProduct(setWasteForm, id)} />
             <Input label="Quantity" type="number" value={wasteForm.quantity} onChange={(e) => setWasteForm({ ...wasteForm, quantity: Number(e.target.value) })} />
             <UnitSelect value={wasteForm.unit} onChange={(unit) => setWasteForm({ ...wasteForm, unit })} />
             <Select label="Reason" value={wasteForm.reason} onChange={(e) => setWasteForm({ ...wasteForm, reason: e.target.value })}>
@@ -557,17 +676,42 @@ export default function Inventory() {
 
       {active === 'Recipes' && (
         <Card className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-            <Select label="Menu Item" value={recipeMenuId} onChange={(e) => setRecipeMenuId(e.target.value)}>
-              {menuItems.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+          <div className="grid gap-3 lg:grid-cols-[180px_1fr_auto] lg:items-end">
+            <Select label="Menu Category" value={recipeMenuCategory} onChange={(e) => { setRecipeMenuCategory(e.target.value); setRecipeMenuId('') }}>
+              <option value="">Select category</option>
+              <option value="Pizza">Pizza</option>
+              <option value="Burger">Burger</option>
+              <option value="Fries">Fries</option>
+              <option value="Sandwich">Sandwich</option>
+              <option value="Pasta">Pasta</option>
+              <option value="Drinks">Drinks</option>
+              <option value="Dessert">Dessert</option>
             </Select>
-            <Button onClick={() => setRecipeRows((rows) => [...rows, { inventoryItem: items[0]?._id || '', quantity: 1, unit: items[0]?.unit || 'PCS' }])}><FiPlus /> Ingredient</Button>
+            <Select label="Menu Item" value={recipeMenuId} onChange={(e) => setRecipeMenuId(e.target.value)}>
+              <option value="">Select menu item</option>
+              {recipeMenuCategory ? menuItems.filter((item) => item.category === recipeMenuCategory).map((item) => <option key={item._id} value={item._id}>{item.name}</option>) : menuItems.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+            </Select>
+            <Button onClick={() => setRecipeRows((rows) => [...rows, { category: '', inventoryItem: '', quantity: 1, unit: 'PCS' }])}><FiPlus /> Ingredient</Button>
           </div>
           <div className="space-y-3">
             {recipeRows.map((row, idx) => (
-              <div key={idx} className="grid gap-3 rounded-xl border border-white/10 bg-black/20 p-3 md:grid-cols-[1fr_140px_140px_44px]">
-                <ProductSelect label="Ingredient" items={items} value={row.inventoryItem} onChange={(id) => {
-                  const item = items.find((it) => it._id === id)
+              <div key={idx} className="grid gap-3 rounded-xl border border-white/10 bg-black/20 p-3 md:grid-cols-[180px_1fr_140px_140px_44px]">
+                <Select label="Category" value={row.category} onChange={(e) => { setRecipeRows((rows) => rows.map((r, i) => i === idx ? { ...r, category: e.target.value, inventoryItem: '' } : r)) }}>
+                  <option value="">Select category</option>
+                  <option value="Frozen">Frozen</option>
+                  <option value="Vegetables">Vegetables</option>
+                  <option value="Cooking Material">Cooking Material</option>
+                  <option value="Packaging">Packaging</option>
+                  <option value="Cleaning material">Cleaning material</option>
+                  <option value="Stationary">Stationary</option>
+                  <option value="Masala">Masala</option>
+                  <option value="Breads">Breads</option>
+                  <option value="Cold drinks">Cold drinks</option>
+                  <option value="Sauces">Sauces</option>
+                  <option value="Syrups">Syrups</option>
+                </Select>
+                <ProductSelect label="Ingredient" items={row.category ? allProducts.filter((it) => it.category === row.category) : allProducts} value={row.inventoryItem} onChange={(id) => {
+                  const item = allProducts.find((it) => it._id === id)
                   setRecipeRows((rows) => rows.map((r, i) => i === idx ? { ...r, inventoryItem: id, unit: item?.unit || r.unit } : r))
                 }} />
                 <Input label="Qty per order" type="number" value={row.quantity} onChange={(e) => setRecipeRows((rows) => rows.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r))} />
@@ -783,6 +927,32 @@ export default function Inventory() {
           ))}
         </div>
       </Modal>
+
+      <Modal
+        open={categoryModal.open}
+        onClose={() => setCategoryModal({ open: false, editing: null })}
+        title={categoryModal.editing ? 'Edit Category' : 'New Category'}
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setCategoryModal({ open: false, editing: null })}>Cancel</Button>
+            <Button onClick={saveCategory}>Save</Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Category Name"
+            value={categoryForm.name}
+            onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+            placeholder="Enter category name"
+          />
+          {categoryModal.editing && (
+            <p className="text-sm text-nb-gray">
+              Editing category will update all products currently assigned to "{categoryModal.editing}"
+            </p>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -814,7 +984,7 @@ function MovementCard({ title, button, onSubmit, children }) {
   )
 }
 
-function ProductTable({ rows, onEdit, onDelete, onRemoveExpired }) {
+function ProductTable({ rows, onEdit, onDelete, onRemoveExpired, onEditCategory, onDeleteCategory }) {
   const groupedRows = rows.reduce((acc, item) => {
     const category = item.category || 'General'
     if (!acc[category]) acc[category] = []
@@ -841,7 +1011,13 @@ function ProductTable({ rows, onEdit, onDelete, onRemoveExpired }) {
             <React.Fragment key={`group-${category}`}>
               <tr key={`cat-${category}`} className="bg-nb-neon-orange/20">
                 <Td colSpan="7" className="py-2 font-heading font-bold text-nb-neon-orange">
-                  {category}
+                  <div className="flex items-center justify-between">
+                    <span>{category}</span>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => onEditCategory && onEditCategory(category)}><FiEdit2 /></Button>
+                      <Button size="sm" variant="danger" onClick={() => onDeleteCategory && onDeleteCategory(category)}><FiTrash2 /></Button>
+                    </div>
+                  </div>
                 </Td>
               </tr>
               {items.map((it) => {

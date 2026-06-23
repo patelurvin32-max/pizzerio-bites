@@ -73,7 +73,7 @@ export const createUser = asyncHandler(async (req, res) => {
   const targetRole = role || ROLES.STAFF
   if (!allowedRoles.has(targetRole)) return res.status(400).json({ message: 'Invalid role' })
   assertCanAssignRole(req.user.role, targetRole)
-  const exists = await User.findOne({ email: email.toLowerCase() })
+  const exists = await User.findOne({ email: email.toLowerCase() }).select('_id').lean()
   if (exists) return res.status(409).json({ message: 'Email already registered' })
   const user = await User.create({
     name,

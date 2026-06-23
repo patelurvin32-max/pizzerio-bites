@@ -22,5 +22,12 @@ const inventoryTransactionSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+// Indexes for performance optimization
+inventoryTransactionSchema.index({ date: -1 })
+inventoryTransactionSchema.index({ type: 1 })
+inventoryTransactionSchema.index({ item: 1 })
+inventoryTransactionSchema.index({ date: -1, type: 1 })
+inventoryTransactionSchema.index({ item: 1, date: -1 })
+
 export default mongoose.models.InventoryTransaction ||
   mongoose.model('InventoryTransaction', inventoryTransactionSchema)

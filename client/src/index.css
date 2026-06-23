@@ -1,3 +1,18 @@
 @import './styles/tailwind.css';
 @import './styles/globals.css';
 @import './styles/animations.css';
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #invoice-print-root,
+  #invoice-print-root * {
+    visibility: visible;
+  }
+  #invoice-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+}

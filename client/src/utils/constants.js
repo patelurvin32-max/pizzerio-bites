@@ -14,6 +14,7 @@ import {
   FiUsers,
   FiUserCheck,
   FiCalendar,
+  FiClock,
 } from 'react-icons/fi'
 
 export const ROLES = {
@@ -132,6 +133,7 @@ export const NAV_ITEMS = [
   // { to: '/dashboard/messages', label: 'Messages', icon: FiMail, minRoles: staffContent },
   { to: '/dashboard/users', label: 'Users', icon: FiUsers, minRoles: adminUp },
   { to: '/dashboard/staff', label: 'Staff', icon: FiUserCheck, minRoles: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER] },
+  { to: '/dashboard/attendance', label: 'Attendance', icon: FiClock, minRoles: mgmtReception },
   { to: '/dashboard/inventory', label: 'Inventory', icon: FiPackage, minRoles: mgmtReception },
   { to: '/dashboard/analytics', label: 'Analytics', icon: FiBarChart2, minRoles: mgmt },
   // { to: '/dashboard/cms', label: 'CMS', icon: FiLayout, minRoles: mgmt },
