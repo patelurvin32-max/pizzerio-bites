@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { sameSiteForCookies, shouldUseSecureCookies } from './cookieOptions.js'
 
 export const REFRESH_COOKIE = 'nb_refresh_token'
 const REFRESH_DAYS = parseInt(process.env.JWT_REFRESH_DAYS || '7', 10)
@@ -16,11 +17,11 @@ export function refreshExpiresAt() {
 }
 
 export function refreshCookieOptions() {
-  const secure = process.env.NODE_ENV === 'production'
+  const secure = shouldUseSecureCookies()
   return {
     httpOnly: true,
     secure,
-    sameSite: secure ? 'none' : 'lax',
+    sameSite: sameSiteForCookies(),
     maxAge: REFRESH_DAYS * 24 * 60 * 60 * 1000,
     path: '/api/auth',
   }
