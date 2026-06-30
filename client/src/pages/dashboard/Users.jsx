@@ -120,7 +120,6 @@ export default function Users() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-nb-white">Users</h1>
-          <p className="text-sm text-nb-gray">Search, filter, assign roles, and control access.</p>
         </div>
         <Button onClick={openCreate}>Add user</Button>
       </div>
@@ -196,14 +195,14 @@ export default function Users() {
         onClose={() => setModal({ open: false, editing: null })}
         title={modal.editing ? 'Edit user' : 'Create user'}
         footer={
-          <>
+          <div className="flex gap-3">
             <Button variant="ghost" onClick={() => setModal({ open: false, editing: null })}>
               Cancel
             </Button>
             <Button onClick={save} disabled={modalLoading}>
               Save
             </Button>
-          </>
+          </div>
         }
       >
         <div className="grid gap-3 sm:grid-cols-2">

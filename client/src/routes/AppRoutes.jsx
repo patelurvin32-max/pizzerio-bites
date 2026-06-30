@@ -15,7 +15,6 @@ const Menu = lazy(() => import('../pages/dashboard/Menu.jsx'))
 const Orders = lazy(() => import('../pages/dashboard/Orders.jsx'))
 const Reservations = lazy(() => import('../pages/dashboard/Reservations.jsx'))
 const Offers = lazy(() => import('../pages/dashboard/Offers.jsx'))
-const Categories = lazy(() => import('../pages/dashboard/Categories.jsx'))
 const Gallery = lazy(() => import('../pages/dashboard/Gallery.jsx'))
 const Reviews = lazy(() => import('../pages/dashboard/Reviews.jsx'))
 const Messages = lazy(() => import('../pages/dashboard/Messages.jsx'))
@@ -24,7 +23,6 @@ const Settings = lazy(() => import('../pages/dashboard/Settings.jsx'))
 const CMS = lazy(() => import('../pages/dashboard/CMS.jsx'))
 const Inventory = lazy(() => import('../pages/dashboard/Inventory.jsx'))
 const Notifications = lazy(() => import('../pages/dashboard/Notifications.jsx'))
-const Attendance = lazy(() => import('../pages/dashboard/Attendance.jsx'))
 
 const mgmt = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MANAGER]
 const mgmtReception = [...mgmt, ROLES.RECEPTION]
@@ -61,16 +59,6 @@ export default function AppRoutes() {
             element={
               <SuspensePage>
                 <Notifications />
-              </SuspensePage>
-            }
-          />
-          <Route
-            path="/dashboard/attendance"
-            element={
-              <SuspensePage>
-                <RoleRoute roles={mgmtReception}>
-                  <Attendance />
-                </RoleRoute>
               </SuspensePage>
             }
           />
@@ -138,16 +126,6 @@ export default function AppRoutes() {
               <SuspensePage>
                 <RoleRoute roles={mgmt}>
                   <Menu />
-                </RoleRoute>
-              </SuspensePage>
-            }
-          />
-          <Route
-            path="/dashboard/categories"
-            element={
-              <SuspensePage>
-                <RoleRoute roles={mgmt}>
-                  <Categories />
                 </RoleRoute>
               </SuspensePage>
             }

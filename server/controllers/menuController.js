@@ -23,11 +23,29 @@ export const listPublicItems = asyncHandler(async (req, res) => {
   if (req.query.featured === 'true') filter.featured = true
   if (req.query.tag) filter.tags = req.query.tag
 
-  const items = await MenuItem.find(filter)
-    .populate('category')
-    .sort({ updatedAt: -1 })
-    .lean()
-  res.json({ items })
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10))
+  const skip = (page - 1) * limit
+
+  const [items, total] = await Promise.all([
+    MenuItem.find(filter)
+      .populate('category')
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    MenuItem.countDocuments(filter)
+  ])
+
+  res.json({
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  })
 })
 
 export const createCategory = asyncHandler(async (req, res) => {
@@ -58,8 +76,31 @@ export const listMenuItems = asyncHandler(async (req, res) => {
   if (regex) {
     filter.$or = [{ name: regex }, { description: regex }]
   }
-  const items = await MenuItem.find(filter).populate('category').populate('recipe.inventoryItem').sort({ updatedAt: -1 }).lean()
-  res.json({ items })
+
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10))
+  const skip = (page - 1) * limit
+
+  const [items, total] = await Promise.all([
+    MenuItem.find(filter)
+      .populate('category')
+      .populate('recipe.inventoryItem')
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    MenuItem.countDocuments(filter)
+  ])
+
+  res.json({
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  })
 })
 
 export const createMenuItem = asyncHandler(async (req, res) => {

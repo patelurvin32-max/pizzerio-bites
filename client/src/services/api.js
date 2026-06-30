@@ -2,6 +2,9 @@ import axios from 'axios'
 
 let _accessToken = null
 let _csrfToken = null
+let _csrfInitPromise = null
+
+export const AUTH_SESSION_EXPIRED = 'auth:session-expired'
 
 export function getAccessToken() {
   return _accessToken
@@ -21,17 +24,59 @@ function setCsrfToken(token) {
 
 const MUTATING_METHODS = new Set(['post', 'put', 'patch', 'delete'])
 
+function skipCsrfPrefetch(url) {
+  return url?.includes('/api/auth/login')
+}
+
+function formatApiError(err) {
+  if (err.code === 'ECONNABORTED') {
+    return new Error('Request timed out. The server may still be starting — please try again.')
+  }
+  if (err.code === 'ERR_NETWORK' || !err.response) {
+    return new Error('Unable to reach the server. Check your connection and try again.')
+  }
+  const msg = err.response?.data?.message || err.message || 'Request failed'
+  return new Error(msg)
+}
+
+function notifySessionExpired() {
+  setAccessToken(null)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED))
+  }
+}
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '',
   timeout: 25000,
   withCredentials: true,
 })
 
+export function ensureCsrfToken() {
+  if (getCsrfToken()) return Promise.resolve()
+  if (!_csrfInitPromise) {
+    _csrfInitPromise = api
+      .get('/api/health')
+      .catch((err) => {
+        console.warn('[auth] CSRF prefetch failed:', err.message)
+        throw err
+      })
+      .finally(() => {
+        _csrfInitPromise = null
+      })
+  }
+  return _csrfInitPromise
+}
+
 api.interceptors.request.use(async (config) => {
   const method = config.method?.toLowerCase()
 
-  if (method && MUTATING_METHODS.has(method) && !getCsrfToken()) {
-    await api.get('/api/health')
+  if (method && MUTATING_METHODS.has(method) && !getCsrfToken() && !skipCsrfPrefetch(config.url)) {
+    try {
+      await ensureCsrfToken()
+    } catch {
+      /* allow request to proceed; server may skip CSRF when no refresh cookie */
+    }
   }
 
   const token = getAccessToken()
@@ -80,13 +125,13 @@ api.interceptors.response.use(
         const csrfToken = getCsrfToken()
         if (csrfToken) original.headers['X-CSRF-Token'] = csrfToken
         return api(original)
-      } catch {
-        setAccessToken(null)
+      } catch (refreshErr) {
+        console.warn('[auth] Token refresh failed:', refreshErr.message)
+        notifySessionExpired()
       }
     }
 
-    const msg = err.response?.data?.message || err.message || 'Request failed'
-    return Promise.reject(new Error(msg))
+    return Promise.reject(formatApiError(err))
   }
 )
 

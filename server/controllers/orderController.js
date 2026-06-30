@@ -147,10 +147,17 @@ export const deleteOrder = asyncHandler(async (req, res) => {
 })
 
 export const invoice = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id).lean()
+  const order = await Order.findById(req.params.id)
+    .populate({
+      path: 'items.menuItem',
+      select: 'category',
+      populate: { path: 'category', select: 'name sortOrder' },
+    })
+    .lean()
   if (!order) return res.status(404).json({ message: 'Not found' })
 
   const restaurantSetting = await AppSettings.findOne({ key: 'restaurantInfo' }).lean()
+  const layoutSetting = await AppSettings.findOne({ key: 'invoiceLayout' }).lean()
   const restaurant = restaurantSetting?.value || {
     name: 'Pizzerio Bites',
     address: 'G-5, Welcome point, Varkund, Dadra and Nagar Haveli and Daman and Diu 396210',
@@ -162,9 +169,10 @@ export const invoice = asyncHandler(async (req, res) => {
 
   res.json({
     invoiceNumber: order.orderNumber,
-    issuedAt: new Date().toISOString(),
+    issuedAt: order.createdAt,
     restaurant,
     order,
+    invoiceLayout: layoutSetting?.value || null,
     gstNote: 'Inclusive of GST',
   })
 })

@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { FiChevronDown, FiChevronRight, FiEdit2, FiTrash2 } from 'react-icons/fi'
 import Card from '../../components/common/Card.jsx'
 import Button from '../../components/common/Button.jsx'
 import Input from '../../components/common/Input.jsx'
-import Select from '../../components/common/Select.jsx'
 import Modal from '../../components/common/Modal.jsx'
-import Table, { Th, Tr, Td } from '../../components/common/Table.jsx'
 import Badge from '../../components/common/Badge.jsx'
 import Loader from '../../components/common/Loader.jsx'
 import { menuService } from '../../services/menuService.js'
@@ -25,18 +23,20 @@ const emptyItem = {
   tagsInput: '',
 }
 
-const pageLengthOptions = [10, 25, 50, 100]
+const emptyCat = { name: '', slug: '', description: '', sortOrder: 0, active: true, dualPricing: false, variantLabel: 'Extra Cheese' }
+
+const pageLengthOptions = [10, 25, 50]
 
 export default function Menu() {
   const notify = useNotify()
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState({ open: false, editing: null })
+  const [modal, setModal] = useState({ open: false, editing: null, type: 'item' })
   const [form, setForm] = useState(emptyItem)
-  const [categoryFilter, setCategoryFilter] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
   const [pageLength, setPageLength] = useState(10)
-  const [page, setPage] = useState(1)
+  const [categoryFilter, setCategoryFilter] = useState('all')
 
   const selectedCategory = useMemo(
     () => categories.find((c) => c._id === form.category),
@@ -44,31 +44,57 @@ export default function Menu() {
   )
   const dualPricing = categoryHasDualPricing(selectedCategory)
   const variantLabel = getVariantLabel(selectedCategory)
-  const filteredItems = useMemo(() => {
-    if (!categoryFilter) return items
-    return items.filter((item) => (item.category?._id || item.category) === categoryFilter)
-  }, [items, categoryFilter])
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageLength))
-  const currentPage = Math.min(page, totalPages)
-  const pagedItems = useMemo(() => {
-    const start = (currentPage - 1) * pageLength
-    return filteredItems.slice(start, start + pageLength)
-  }, [filteredItems, currentPage, pageLength])
-  const pageStart = filteredItems.length ? (currentPage - 1) * pageLength + 1 : 0
-  const pageEnd = Math.min(currentPage * pageLength, filteredItems.length)
+
+  const categoriesWithItems = useMemo(() => {
+    return categories
+      .map((cat) => ({
+        ...cat,
+        items: items.filter((item) => (item.category?._id || item.category) === cat._id),
+      }))
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+  }, [categories, items])
+
+  const allProductsWithCategory = useMemo(() => {
+    const result = []
+    categoriesWithItems.forEach((cat) => {
+      cat.items.forEach((item) => {
+        result.push({ ...item, category: cat })
+      })
+    })
+    if (categoryFilter !== 'all') {
+      return result.filter((item) => (item.category?._id || item.category) === categoryFilter)
+    }
+    return result
+  }, [categoriesWithItems, categoryFilter])
+
+  const paginatedProducts = useMemo(() => {
+    const totalPages = Math.max(1, Math.ceil(allProductsWithCategory.length / pageLength))
+    const currentPageSafe = Math.min(currentPage, totalPages)
+    const start = (currentPageSafe - 1) * pageLength
+    const end = start + pageLength
+    const pageProducts = allProductsWithCategory.slice(start, end)
+    
+    return {
+      products: pageProducts,
+      currentPage: currentPageSafe,
+      totalPages,
+      totalItems: allProductsWithCategory.length,
+      pageStart: allProductsWithCategory.length ? start + 1 : 0,
+      pageEnd: Math.min(end, allProductsWithCategory.length),
+    }
+  }, [allProductsWithCategory, currentPage, pageLength])
 
   useEffect(() => {
-    setPage(1)
-  }, [categoryFilter, pageLength])
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages)
-  }, [page, totalPages])
+    setCurrentPage(1)
+  }, [pageLength, categoryFilter])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [c, m] = await Promise.all([menuService.categories(), menuService.items()])
+      const [c, m] = await Promise.all([
+        menuService.categories(),
+        menuService.items({ limit: 1000 })
+      ])
       setCategories(c.items)
       setItems(m.items)
     } catch (e) {
@@ -82,16 +108,16 @@ export default function Menu() {
     load()
   }, [load])
 
-  function openCreate() {
+  function openCreateItem() {
     if (!categories.length) {
       notify.error('Add at least one category before creating menu items.')
       return
     }
     setForm({ ...emptyItem, category: categories[0]._id })
-    setModal({ open: true, editing: null })
+    setModal({ open: true, editing: null, type: 'item' })
   }
 
-  function openEdit(row) {
+  function openEditItem(row) {
     setForm({
       name: row.name,
       slug: row.slug,
@@ -103,10 +129,28 @@ export default function Menu() {
       featured: row.featured,
       tagsInput: (row.tags || []).join(', '),
     })
-    setModal({ open: true, editing: row._id })
+    setModal({ open: true, editing: row._id, type: 'item' })
   }
 
-  async function save() {
+  function openCreateCategory() {
+    setForm(emptyCat)
+    setModal({ open: true, editing: null, type: 'category' })
+  }
+
+  function openEditCategory(cat) {
+    setForm({
+      name: cat.name,
+      slug: cat.slug,
+      description: cat.description,
+      sortOrder: cat.sortOrder,
+      active: cat.active,
+      dualPricing: Boolean(cat.dualPricing),
+      variantLabel: cat.variantLabel || 'Extra Cheese',
+    })
+    setModal({ open: true, editing: cat._id, type: 'category' })
+  }
+
+  async function saveItem() {
     if (!form.category) {
       notify.error('Select a category for this item.')
       return
@@ -141,14 +185,26 @@ export default function Menu() {
       }
       await menuService.saveItem(modal.editing ? { _id: modal.editing, ...body } : body)
       notify.success('Menu item saved')
-      setModal({ open: false, editing: null })
+      setModal({ open: false, editing: null, type: 'item' })
       load()
     } catch (e) {
       notify.error(e.message)
     }
   }
 
-  async function remove(id) {
+  async function saveCategory() {
+    try {
+      const body = { ...form, slug: form.slug || slugify(form.name) }
+      await menuService.saveCategory(modal.editing ? { _id: modal.editing, ...body } : body)
+      notify.success('Category saved')
+      setModal({ open: false, editing: null, type: 'category' })
+      load()
+    } catch (e) {
+      notify.error(e.message)
+    }
+  }
+
+  async function removeItem(id) {
     if (!window.confirm('Delete item?')) return
     try {
       await menuService.deleteItem(id)
@@ -159,174 +215,222 @@ export default function Menu() {
     }
   }
 
+  async function removeCategory(id) {
+    if (!window.confirm('Delete category? This will also remove all items in this category.')) return
+    try {
+      await menuService.deleteCategory(id)
+      notify.success('Deleted')
+      load()
+    } catch (e) {
+      notify.error(e.message)
+    }
+  }
+
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-nb-white">Menu</h1>
+          
         </div>
-        <Button onClick={openCreate}>Add item</Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-2">
+          <Button variant="ghost" onClick={openCreateCategory} className="w-full sm:w-auto">
+            Add Category
+          </Button>
+          <Button onClick={openCreateItem} className="w-full sm:w-auto">Add Product</Button>
+        </div>
       </div>
 
-      <Card className="flex flex-col gap-2 !p-3 sm:flex-row sm:items-end sm:gap-4">
-        <div className="w-full sm:w-28">
-          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-nb-gray">Page length</p>
-          <Select value={pageLength} onChange={(e) => setPageLength(Number(e.target.value))}>
-            {pageLengthOptions.map((length) => (
-              <option key={length} value={length}>
-                {length}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="w-full sm:w-52">
-          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-nb-gray">Filter category</p>
-          <Select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </Card>
-
-      {!loading && !categories.length && (
-        <p className="rounded-xl border border-nb-neon-orange/30 bg-nb-neon-orange/10 px-4 py-3 text-sm text-nb-cream">
-          No categories yet.{' '}
-          <Link to="/dashboard/categories" className="font-semibold text-nb-neon-orange underline-offset-2 hover:underline">
-            Create categories
-          </Link>{' '}
-          first, then add menu items.
-        </p>
-      )}
-
-      <Card>
-        {loading ? (
+      {loading ? (
+        <Card>
           <Loader />
-        ) : items.length === 0 ? (
+        </Card>
+      ) : categories.length === 0 ? (
+        <Card>
           <p className="py-10 text-center text-sm text-nb-gray">
-            No menu items yet. Click <span className="text-nb-cream">Add item</span> to create your first dish.
+            No categories yet. Click <span className="text-nb-cream">Add Category</span> to create your first category.
           </p>
-        ) : filteredItems.length === 0 ? (
-          <p className="py-10 text-center text-sm text-nb-gray">No menu items match this category.</p>
-        ) : (
-          <>
-            <div className="space-y-3 sm:hidden">
-              {pagedItems.map((it) => (
-                <div key={it._id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-                  <div className="grid grid-cols-2 gap-2 text-xs uppercase tracking-wide text-nb-gray">
-                    <span>Category</span>
-                    <span>Item</span>
-                  </div>
-                  <div className="mt-1 grid grid-cols-2 gap-2 text-sm text-nb-white">
-                    <span>{it.category?.name || '—'}</span>
-                    <span className="font-medium">{it.name}</span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-sm">
-                    <span className="text-nb-gray">Price</span>
-                    <span className="text-nb-white">{formatMenuItemPrice(it, it.category)}</span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {it.featured && <Badge tone="warning">Featured</Badge>}
-                    {it.tags?.includes('popular') && <Badge tone="info">Popular</Badge>}
-                    <Badge tone={it.available ? 'success' : 'danger'}>{it.available ? 'Available' : 'Hidden'}</Badge>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <Button size="sm" variant="ghost" className="flex-1" onClick={() => openEdit(it)}>
-                      Edit
-                    </Button>
-                    <Button size="sm" variant="danger" className="flex-1" onClick={() => remove(it._id)}>
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))}
+        </Card>
+      ) : allProductsWithCategory.length === 0 ? (
+        <Card>
+          <p className="py-10 text-center text-sm text-nb-gray">
+            No menu items yet. Click <span className="text-nb-cream">Add Product</span> to create your first item.
+          </p>
+        </Card>
+      ) : (
+        <Card>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-medium uppercase tracking-wide text-nb-gray">Rows per page:</span>
+              <select
+                value={pageLength}
+                onChange={(e) => setPageLength(Number(e.target.value))}
+                className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-nb-white focus:border-nb-neon-orange focus:outline-none focus:ring-1 focus:ring-nb-neon-orange"
+              >
+                {pageLengthOptions.map((length) => (
+                  <option key={length} value={length}>
+                    {length}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="hidden sm:block">
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>Category</Th>
-                    <Th>Item</Th>
-                    <Th>Price</Th>
-                    <Th>Flags</Th>
-                    <Th className="text-right">Actions</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedItems.map((it) => (
-                    <Tr key={it._id}>
-                      <Td>{it.category?.name || '—'}</Td>
-                      <Td className="font-medium">{it.name}</Td>
-                      <Td>{formatMenuItemPrice(it, it.category)}</Td>
-                      <Td className="space-x-2">
-                        {it.featured && <Badge tone="warning">Featured</Badge>}
-                        {it.tags?.includes('popular') && <Badge tone="info">Popular</Badge>}
-                        <Badge tone={it.available ? 'success' : 'danger'}>{it.available ? 'Available' : 'Hidden'}</Badge>
-                      </Td>
-                      <Td className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(it)}>
-                            Edit
-                          </Button>
-                          <Button size="sm" variant="danger" onClick={() => remove(it._id)}>
-                            Delete
-                          </Button>
-                        </div>
-                      </Td>
-                    </Tr>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
-
-            <div className="mt-4 flex flex-col gap-3 text-sm text-nb-gray sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                Showing {pageStart}-{pageEnd} of {filteredItems.length}
-              </span>
-              <div className="flex items-center justify-between gap-4 sm:justify-end">
-                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={currentPage <= 1} onClick={() => setPage((p) => p - 1)}>
-                  Previous
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-3 flex-1 mx-0 sm:mx-3">
+              <div className="flex overflow-x-auto gap-2 sm:flex-wrap sm:justify-center scrollbar-thin">
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('all')}
+                  className={`touch-manipulation min-h-[44px] shrink-0 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition active:scale-95 ${
+                    categoryFilter === 'all'
+                      ? 'border-nb-neon-orange bg-nb-neon-orange text-black shadow-[0_0_18px_rgba(255,122,0,0.3)]'
+                      : 'border-white/10 bg-black/40 text-nb-gray hover:border-nb-neon-orange/40 hover:text-nb-cream'
+                  }`}
+                >
+                  All
                 </button>
-                <span>
-                  Page {currentPage} / {totalPages}
-                </span>
-                <button type="button" className="hover:text-nb-white disabled:opacity-40" disabled={currentPage >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                  Next
-                </button>
+                {categories.map((c) => (
+                  <button
+                    key={c._id}
+                    type="button"
+                    onClick={() => setCategoryFilter(c._id)}
+                    className={`touch-manipulation min-h-[44px] shrink-0 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition active:scale-95 ${
+                      categoryFilter === c._id
+                        ? 'border-nb-neon-orange bg-nb-neon-orange text-black shadow-[0_0_18px_rgba(255,122,0,0.3)]'
+                        : 'border-white/10 bg-black/40 text-nb-gray hover:border-nb-neon-orange/40 hover:text-nb-cream'
+                    }`}
+                  >
+                    {c.name}
+                  </button>
+                ))}
               </div>
             </div>
-          </>
-        )}
-      </Card>
+
+            <div className="text-xs text-nb-gray shrink-0">
+              Showing {paginatedProducts.pageStart}-{paginatedProducts.pageEnd} of {paginatedProducts.totalItems} records
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px]">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-nb-gray">Category</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-nb-gray">Item</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-nb-gray">Price</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-nb-gray">Flags</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-nb-gray">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedProducts.products.map((product, index) => {
+                  const showCategoryHeader = index === 0 || product.category._id !== paginatedProducts.products[index - 1]?.category?._id
+                  return (
+                    <React.Fragment key={product._id}>
+                      {showCategoryHeader && (
+                        <tr className="bg-white/[0.02]">
+                          <td colSpan={5} className="px-3 py-2">
+                            <div className="flex items-center justify-between">
+                              <h3 className="font-heading text-sm font-semibold text-nb-white">{product.category.name}</h3>
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" variant="ghost" onClick={() => openEditCategory(product.category)} className="min-h-[44px] min-w-[44px]">
+                                  <FiEdit2 className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant="danger" onClick={() => removeCategory(product.category._id)} className="min-h-[44px] min-w-[44px]">
+                                  <FiTrash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      <tr className="border-b border-white/5 last:border-0">
+                        <td className="px-3 py-3 text-sm text-nb-gray">
+                          {showCategoryHeader ? product.category.name : ''}
+                        </td>
+                        <td className="px-3 py-3 text-sm font-medium text-nb-white max-w-[200px] truncate" title={product.name}>{product.name}</td>
+                        <td className="px-3 py-3 text-sm text-nb-white">{formatMenuItemPrice(product, product.category)}</td>
+                        <td className="px-3 py-3 text-sm">
+                          <div className="flex gap-2">
+                            {product.featured && <Badge tone="warning">Featured</Badge>}
+                            {product.tags?.includes('popular') && <Badge tone="info">Popular</Badge>}
+                            <Badge tone={product.available ? 'success' : 'danger'}>{product.available ? 'Available' : 'Hidden'}</Badge>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => openEditItem(product)} className="min-h-[44px] min-w-[44px]">
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="danger" onClick={() => removeItem(product._id)} className="min-h-[44px] min-w-[44px]">
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 text-sm text-nb-gray sm:flex-row sm:items-center sm:justify-between">
+            <span>{paginatedProducts.totalItems} items</span>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                className="min-h-[44px] min-w-[80px] rounded-lg border border-white/10 px-3 py-2 hover:border-nb-neon-orange/40 hover:text-nb-white disabled:opacity-40 transition"
+                disabled={paginatedProducts.currentPage <= 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+              >
+                Previous
+              </button>
+              <span className="min-h-[44px] flex items-center">Page {paginatedProducts.currentPage} / {paginatedProducts.totalPages}</span>
+              <button
+                type="button"
+                className="min-h-[44px] min-w-[80px] rounded-lg border border-white/10 px-3 py-2 hover:border-nb-neon-orange/40 hover:text-nb-white disabled:opacity-40 transition"
+                disabled={paginatedProducts.currentPage >= paginatedProducts.totalPages}
+                onClick={() => setCurrentPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Modal
-        open={modal.open}
-        onClose={() => setModal({ open: false, editing: null })}
+        open={modal.open && modal.type === 'item'}
+        onClose={() => setModal({ open: false, editing: null, type: 'item' })}
         title={modal.editing ? 'Edit menu item' : 'New menu item'}
         wide
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-            <Button variant="ghost" onClick={() => setModal({ open: false, editing: null })}>
+            <Button variant="ghost" onClick={() => setModal({ open: false, editing: null, type: 'item' })}>
               Cancel
             </Button>
-            <Button onClick={save}>Save</Button>
+            <Button onClick={saveItem}>Save</Button>
           </div>
         }
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Enter item name" />
           <Input label="Slug" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="auto from name if empty" />
-          <Select label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-            {categories.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-nb-gray">Category</label>
+            <select
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-nb-white focus:border-nb-neon-orange focus:outline-none focus:ring-1 focus:ring-nb-neon-orange"
+            >
+              {categories.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
           {dualPricing ? (
             <>
               <Input
@@ -377,6 +481,48 @@ export default function Menu() {
             className="sm:col-span-2"
           />
           <Input label="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="sm:col-span-2" />
+        </div>
+      </Modal>
+
+      <Modal
+        open={modal.open && modal.type === 'category'}
+        onClose={() => setModal({ open: false, editing: null, type: 'category' })}
+        title={modal.editing ? 'Edit category' : 'New category'}
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+            <Button variant="ghost" onClick={() => setModal({ open: false, editing: null, type: 'category' })}>
+              Cancel
+            </Button>
+            <Button onClick={saveCategory}>Save</Button>
+          </div>
+        }
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input label="Slug" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
+          <Input label="Sort order" type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} />
+          <label className="flex items-center gap-2 text-sm text-nb-gray">
+            <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+            Active
+          </label>
+          <Input label="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="sm:col-span-2" />
+          <label className="flex items-center gap-2 text-sm text-nb-gray sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={form.dualPricing}
+              onChange={(e) => setForm({ ...form, dualPricing: e.target.checked })}
+            />
+            Two prices (Regular + variant, e.g. Pizza / Burger)
+          </label>
+          {form.dualPricing && (
+            <Input
+              label="Variant label"
+              value={form.variantLabel}
+              onChange={(e) => setForm({ ...form, variantLabel: e.target.value })}
+              placeholder="Extra Cheese or With Cheese"
+              className="sm:col-span-2"
+            />
+          )}
         </div>
       </Modal>
     </div>

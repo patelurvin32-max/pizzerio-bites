@@ -95,7 +95,7 @@ export default function OrderFormModal({ open, onClose, onSaved, editingOrder })
     }
     setPicker(emptyPicker)
     setLoadingMenu(true)
-    Promise.all([menuService.publicCategories(), menuService.publicItems()])
+    Promise.all([menuService.publicCategories(), menuService.publicItems({ limit: 1000 })])
       .then(([catRes, itemRes]) => {
         const cats = (catRes.items || []).filter((c) => c.active !== false).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         const items = (itemRes.items || []).filter((m) => m.available !== false)
@@ -251,10 +251,14 @@ export default function OrderFormModal({ open, onClose, onSaved, editingOrder })
             <Input
               label="Phone"
               type="tel"
-              inputMode="tel"
+              inputMode="numeric"
               autoComplete="tel"
+              maxLength={11}
               value={form.customerPhone}
-              onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '').slice(0, 11)
+                setForm({ ...form, customerPhone: value })
+              }}
             />
             <Input
               label="Email"

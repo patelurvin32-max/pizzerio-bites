@@ -30,9 +30,14 @@ menuItemSchema.index({ slug: 1 }, { unique: true })
 menuItemSchema.index({ category: 1 })
 menuItemSchema.index({ available: 1 })
 menuItemSchema.index({ createdAt: -1 })
+menuItemSchema.index({ updatedAt: -1 })
 
 // Compound: find available items in category
 menuItemSchema.index({ category: 1, available: 1 })
+
+// Compound: for pagination with sorting
+menuItemSchema.index({ category: 1, updatedAt: -1 })
+menuItemSchema.index({ available: 1, updatedAt: -1 })
 
 // For search functionality
 menuItemSchema.index({ name: 'text', description: 'text' })

@@ -12,5 +12,6 @@ r.get('/summary', c.dashboardSummary)
 r.get('/sales', c.salesSeries)
 r.get('/cafe', c.cafeAnalytics)
 r.get('/traffic', c.trafficStub)
+r.get('/order-report', c.orderReport)
 
 export default r

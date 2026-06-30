@@ -1,9 +1,9 @@
 import Order from '../models/Order.js'
-import User from '../models/User.js'
 import Reservation from '../models/Reservation.js'
 import Staff from '../models/Staff.js'
 import InventoryItem from '../models/InventoryItem.js'
 import ContactMessage from '../models/ContactMessage.js'
+import User from '../models/User.js'
 import { asyncHandler } from '../utils/asyncHandler.js'
 
 const MS_DAY = 24 * 60 * 60 * 1000
@@ -38,7 +38,12 @@ function rangeFromQuery(query) {
     return { start: addDays(selected, -29), end: addDays(selected, 1), days: 30 }
   }
   if (filter === 'custom date') {
-    return { start: selected, end: addDays(selected, 1), days: 1 }
+    const from = parseDateValue(query.from || query.date)
+    const to = parseDateValue(query.to || query.from || query.date)
+    const start = from <= to ? from : to
+    const end = addDays(from <= to ? to : from, 1)
+    const diffDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / MS_DAY))
+    return { start, end, days: diffDays }
   }
   return { start: addDays(selected, -6), end: addDays(selected, 1), days: 7 }
 }
@@ -151,6 +156,73 @@ export const trafficStub = asyncHandler(async (_req, res) => {
   })
 })
 
+export const orderReport = asyncHandler(async (req, res) => {
+  const startDate = req.query.startDate ? new Date(req.query.startDate) : null
+  const endDate = req.query.endDate ? new Date(req.query.endDate) : null
+
+  const filter = {}
+  if (startDate || endDate) {
+    filter.createdAt = {}
+    if (startDate) filter.createdAt.$gte = startDate
+    if (endDate) {
+      const endOfDay = new Date(endDate)
+      endOfDay.setHours(23, 59, 59, 999)
+      filter.createdAt.$lte = endOfDay
+    }
+  }
+
+  const orders = await Order.find(filter)
+    .select('orderNumber customerName customerPhone orderType paymentMethod items total status createdAt')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const totalOrders = orders.length
+  const totalSales = orders.reduce((sum, order) => sum + (order.total || 0), 0)
+  const cashPayments = orders
+    .filter((order) => order.paymentMethod?.toLowerCase() === 'cash')
+    .reduce((sum, order) => sum + (order.total || 0), 0)
+  const onlinePayments = orders
+    .filter((order) => order.paymentMethod?.toLowerCase() !== 'cash')
+    .reduce((sum, order) => sum + (order.total || 0), 0)
+  const averageOrderValue = totalOrders > 0 ? Math.round(totalSales / totalOrders) : 0
+
+  const customerMap = new Map()
+  orders.forEach((order) => {
+    const phone = order.customerPhone || ''
+    if (phone) {
+      const count = customerMap.get(phone) || 0
+      customerMap.set(phone, count + 1)
+    }
+  })
+  const uniqueCustomers = customerMap.size
+  const repeatedCustomers = Array.from(customerMap.values()).filter((count) => count > 1).length
+
+  const orderRows = orders.map((order) => ({
+    orderNumber: order.orderNumber,
+    createdAt: new Date(order.createdAt).toLocaleString(),
+    customerName: order.customerName,
+    customerPhone: order.customerPhone || '-',
+    orderType: order.orderType,
+    paymentMethod: order.paymentMethod,
+    totalItems: order.items?.length || 0,
+    totalAmount: order.total,
+    status: order.status,
+  }))
+
+  res.json({
+    summary: {
+      totalOrders,
+      totalSales,
+      cashPayments,
+      onlinePayments,
+      averageOrderValue,
+      uniqueCustomers,
+      repeatedCustomers,
+    },
+    orders: orderRows,
+  })
+})
+
 export const cafeAnalytics = asyncHandler(async (req, res) => {
   const { start, end, days } = rangeFromQuery(req.query)
   const previousStart = addDays(start, -days)
@@ -195,7 +267,6 @@ export const cafeAnalytics = asyncHandler(async (req, res) => {
       },
       { $sort: { revenue: -1 } },
     ]),
-    User.countDocuments({ status: 'active' }),
   ])
 
   const totalSales = revenueAgg[0]?.total || 0
@@ -280,7 +351,7 @@ export const cafeAnalytics = asyncHandler(async (req, res) => {
       onlinePayments: paymentTotals.Online.value,
       averageOrderValue: avgOrderValue,
       bestSellingItem: bestItem,
-      totalCustomers: customerKeys.size || activeUsers,
+      totalCustomers: customerKeys.size,
       trends: {
         totalSales: percentTrend(totalSales, previousSales),
         totalOrders: percentTrend(totalOrders, previousTotalOrders),

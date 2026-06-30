@@ -14,4 +14,12 @@ const categorySchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+// Single field indexes
+categorySchema.index({ slug: 1 }, { unique: true })
+categorySchema.index({ active: 1 })
+categorySchema.index({ sortOrder: 1 })
+
+// Compound: for sorting active categories
+categorySchema.index({ active: 1, sortOrder: 1 })
+
 export default mongoose.models.Category || mongoose.model('Category', categorySchema)

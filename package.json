@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n client,server -c cyan,magenta \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
+    "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev --prefix server\" \"wait-on -t 60000 http://localhost:5000/api/health && npm run dev --prefix client\"",
     "install:all": "npm install && npm install --prefix client && npm install --prefix server",
     "build": "npm run build --prefix client",
     "start": "npm run start --prefix server",
@@ -13,7 +13,8 @@
     "db:status": "node server/scripts/mongo-migrate.mjs status"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "wait-on": "^8.0.3"
   },
   "dependencies": {
     "csrf-csrf": "^4.0.3"

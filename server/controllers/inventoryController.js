@@ -441,6 +441,13 @@ export const removeExpired = asyncHandler(async (req, res) => {
 
 async function buildClosingPreview(date) {
   const { start, end, key } = dayRange(date || new Date())
+  
+  // Get previous day's closing
+  const prevDate = new Date(date || new Date())
+  prevDate.setDate(prevDate.getDate() - 1)
+  const prevDateKey = dateKey(prevDate)
+  const previousClosing = await InventoryClosing.findOne({ dateKey: prevDateKey }).lean()
+  
   const [items, transactions, closing] = await Promise.all([
     InventoryItem.find()
       .select('name quantity unit purchasePrice')
@@ -460,6 +467,11 @@ async function buildClosingPreview(date) {
     },
     { totalStockIn: 0, totalStockOut: 0, totalWaste: 0 }
   )
+  
+  // Calculate opening stock from previous closing
+  const openingStock = previousClosing?.finalStock || 0
+  const calculatedClosing = openingStock + totals.totalStockIn - totals.totalStockOut - totals.totalWaste
+  
   const lines = items.map((item) => ({
     item: item._id,
     name: item.name,
@@ -469,8 +481,10 @@ async function buildClosingPreview(date) {
   }))
   return {
     dateKey: key,
+    openingStock,
     ...totals,
     finalStock: items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
+    calculatedClosing,
     inventoryValue: lines.reduce((sum, line) => sum + line.value, 0),
     lines,
     closed: closing,
@@ -490,10 +504,12 @@ export const closeDailyStock = asyncHandler(async (req, res) => {
   const closing = await InventoryClosing.create({
     dateKey: payload.dateKey,
     date: new Date(payload.dateKey),
+    openingStock: payload.openingStock,
     totalStockIn: payload.totalStockIn,
     totalStockOut: payload.totalStockOut,
     totalWaste: payload.totalWaste,
     finalStock: payload.finalStock,
+    calculatedClosing: payload.calculatedClosing,
     inventoryValue: payload.inventoryValue,
     notes: notes?.trim() || '',
     closedBy: closedBy.trim(),

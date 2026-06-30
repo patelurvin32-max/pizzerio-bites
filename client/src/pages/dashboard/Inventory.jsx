@@ -17,10 +17,25 @@ import { useNotify } from '../../context/NotificationContext.jsx'
 import { slugify } from '../../utils/helpers.js'
 
 const units = ['KG', 'LTR', 'PCS', 'GM', 'ML']
-const tabs = ['Dashboard', 'Products', 'Stock In', 'Stock Out', 'Waste', 'Recipes', 'Closing', 'Reports']
+const tabs = ['Dashboard', 'Products', 'Stock In', 'Stock Out', 'Waste', 'Recipes', 'Closing']
 const pageLengthOptions = [10, 25, 50, 100]
 const today = () => new Date().toISOString().slice(0, 10)
 const money = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(n) || 0)
+
+function inventoryItemId(ref) {
+  return ref?._id || ref || ''
+}
+
+function resolveInventoryProduct(ref, products = []) {
+  if (ref && typeof ref === 'object' && ref.name) return ref
+  const id = inventoryItemId(ref)
+  return products.find((p) => p._id === id) || null
+}
+
+function inventoryProductCategory(product) {
+  if (!product) return ''
+  return typeof product.category === 'object' ? product.category?.name || product.category?._id : product.category
+}
 const emptyDashboard = {
   metrics: {
     totalProducts: 0,
@@ -106,8 +121,6 @@ export default function Inventory() {
   const [transactions, setTransactions] = useState([])
   const [dashboard, setDashboard] = useState(null)
   const [closingPreview, setClosingPreview] = useState(null)
-  const [reports, setReports] = useState(null)
-  const [reportDateRange, setReportDateRange] = useState({ startDate: '', endDate: '' })
   const [menuItems, setMenuItems] = useState([])
   const [canManageRecipes, setCanManageRecipes] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -128,6 +141,8 @@ export default function Inventory() {
   const [recipeMenuId, setRecipeMenuId] = useState('')
   const [recipeMenuCategory, setRecipeMenuCategory] = useState('')
   const [recipeRows, setRecipeRows] = useState([])
+  const [newRecipeModal, setNewRecipeModal] = useState({ open: false })
+  const [newRecipeForm, setNewRecipeForm] = useState({ menuCategory: '', menuItem: '', ingredients: [] })
   const [categoryModal, setCategoryModal] = useState({ open: false, editing: null })
   const [categoryForm, setCategoryForm] = useState({ name: '' })
   const formsInitialized = useRef(false)
@@ -148,7 +163,7 @@ export default function Inventory() {
 
       if (canAccessMenu || isReception) {
         try {
-          const menuRes = await menuService.items()
+          const menuRes = await menuService.items({ limit: 1000 })
           setMenuItems(menuRes.items)
           setCanManageRecipes(true)
           setRecipeMenuId((id) => id || menuRes.items[0]?._id || '')
@@ -179,7 +194,7 @@ export default function Inventory() {
 
   useEffect(() => {
     if (active !== 'Stock In' && active !== 'Stock Out' && active !== 'Waste' && active !== 'Recipes') return
-    api.get('/api/inventory', { params: { limit: 1000, select: 'name sku category unit' } })
+    api.get('/api/inventory', { params: { limit: 1000 } })
       .then((res) => setAllProducts(res.data.items))
       .catch((e) => console.error('Failed to load all products:', e))
   }, [active])
@@ -382,6 +397,89 @@ export default function Inventory() {
     }
   }
 
+  function addIngredient() {
+    if (!newRecipeForm.tempCategory || !newRecipeForm.tempProduct || !newRecipeForm.tempQuantity) {
+      notify.error('Please select category, product, and enter quantity')
+      return
+    }
+
+    const existingIngredient = newRecipeForm.ingredients.find((ing) => ing.inventoryItem === newRecipeForm.tempProduct)
+    if (existingIngredient) {
+      notify.error('This ingredient is already added')
+      return
+    }
+
+    const product = allProducts.find((p) => p._id === newRecipeForm.tempProduct)
+    const productCategory = typeof product?.category === 'object' ? product.category?.name || product.category?._id : product?.category
+    setNewRecipeForm({
+      ...newRecipeForm,
+      ingredients: [
+        ...newRecipeForm.ingredients,
+        {
+          category: productCategory || newRecipeForm.tempCategory,
+          inventoryItem: newRecipeForm.tempProduct,
+          quantity: newRecipeForm.tempQuantity,
+          unit: newRecipeForm.tempUnit || 'PCS',
+        },
+      ],
+      tempCategory: '',
+      tempProduct: '',
+      tempQuantity: '',
+      tempUnit: 'PCS',
+    })
+  }
+
+  function removeIngredient(index) {
+    setNewRecipeForm({
+      ...newRecipeForm,
+      ingredients: newRecipeForm.ingredients.filter((_, idx) => idx !== index),
+    })
+  }
+
+  async function saveNewRecipe() {
+    if (!newRecipeForm.menuCategory) {
+      notify.error('Please select a menu category')
+      return
+    }
+    if (!newRecipeForm.menuItem) {
+      notify.error('Please select a menu item')
+      return
+    }
+    if (newRecipeForm.ingredients.length === 0) {
+      notify.error('Please add at least one ingredient')
+      return
+    }
+
+    const menu = menuItems.find((item) => item._id === newRecipeForm.menuItem)
+    if (!menu) {
+      notify.error('Menu item not found')
+      return
+    }
+
+    try {
+      const recipe = newRecipeForm.ingredients.filter((ing) => ing.inventoryItem && Number(ing.quantity) > 0)
+      await menuService.saveItem({
+        _id: menu._id,
+        name: menu.name,
+        slug: menu.slug,
+        description: menu.description,
+        price: menu.price,
+        priceVariant: menu.priceVariant,
+        category: menu.category?._id || menu.category,
+        available: menu.available,
+        featured: menu.featured,
+        tags: menu.tags || [],
+        recipe,
+      })
+      notify.success('Recipe saved successfully')
+      setNewRecipeModal({ open: false })
+      setNewRecipeForm({ menuCategory: '', menuItem: '', ingredients: [] })
+      load()
+    } catch (e) {
+      notify.error(e.message)
+    }
+  }
+
   async function refreshClosing(date) {
     try {
       const { data } = await api.get('/api/inventory/closing/preview', { params: { date } })
@@ -409,33 +507,13 @@ export default function Inventory() {
     }
   }
 
-  async function loadReports() {
-    try {
-      const params = {}
-      if (reportDateRange.startDate) params.startDate = reportDateRange.startDate
-      if (reportDateRange.endDate) params.endDate = reportDateRange.endDate
-      const { data } = await api.get('/api/inventory/reports', { params })
-      setReports(data)
-    } catch (e) {
-      notify.error(e.message)
-    }
-  }
-
-  // Lazy load reports when Reports tab is active
-  useEffect(() => {
-    if (active === 'Reports' && !reports) {
-      loadReports()
-    }
-  }, [active])
-
-  function exportCsv(name, rows) {
+  function exportCsv(name, rows, headers) {
     const safeRows = rows || []
     if (!safeRows.length) {
       notify.error('No rows to export')
       return
     }
-    const keys = Object.keys(safeRows[0]).filter((key) => !key.startsWith('_') && typeof safeRows[0][key] !== 'object')
-    const csv = [keys.join(','), ...safeRows.map((row) => keys.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(','))].join('\n')
+    const csv = [headers.join(','), ...safeRows.map((row) => headers.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(','))].join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
     const a = document.createElement('a')
     a.href = url
@@ -462,6 +540,7 @@ export default function Inventory() {
   const pageTone = theme === 'light' ? 'bg-white/[0.08]' : ''
   const viewTabs = canManageRecipes ? tabs : tabs.filter((tab) => tab !== 'Recipes')
   const dash = dashboard || emptyDashboard
+  const recipeItems = useMemo(() => menuItems.filter((item) => item.recipe && item.recipe.length > 0), [menuItems])
 
   if (loading) return <Loader label="Loading inventory module" />
 
@@ -601,13 +680,13 @@ export default function Inventory() {
               <option value="Sauces">Sauces</option>
               <option value="Syrups">Syrups</option>
             </Select>
-            <ProductSelect label="Product Name" items={stockInForm.category ? allProducts.filter((it) => it.category === stockInForm.category) : allProducts} value={stockInForm.productId} onChange={(id) => selectProduct(setStockInForm, id)} />
+            <ProductSelect label="Product Name" items={stockInForm.category ? allProducts.filter((it) => it.category?.toLowerCase() === stockInForm.category.toLowerCase()) : allProducts} value={stockInForm.productId} onChange={(id) => selectProduct(setStockInForm, id)} />
             <Input label="Quantity Added" type="number" value={stockInForm.quantity} onChange={(e) => setStockInForm({ ...stockInForm, quantity: Number(e.target.value) })} />
             <UnitSelect value={stockInForm.unit} onChange={(unit) => setStockInForm({ ...stockInForm, unit })} />
             <Input label="Purchase Price" type="number" value={stockInForm.purchasePrice} onChange={(e) => setStockInForm({ ...stockInForm, purchasePrice: Number(e.target.value) })} />
             <Input label="Supplier Name" value={stockInForm.supplierName} onChange={(e) => setStockInForm({ ...stockInForm, supplierName: e.target.value })} />
             <Input label="Invoice Number" value={stockInForm.invoiceNumber} onChange={(e) => setStockInForm({ ...stockInForm, invoiceNumber: e.target.value })} />
-            <Input label="Date" type="date" value={stockInForm.date} onChange={(e) => setStockInForm({ ...stockInForm, date: e.target.value })} />
+            <CalendarDatePicker label="Date" value={stockInForm.date} onChange={(val) => setStockInForm({ ...stockInForm, date: val })} />
             <Input label="Notes" value={stockInForm.notes} onChange={(e) => setStockInForm({ ...stockInForm, notes: e.target.value })} />
           </FieldGrid>
         </MovementCard>
@@ -630,7 +709,7 @@ export default function Inventory() {
               <option value="Sauces">Sauces</option>
               <option value="Syrups">Syrups</option>
             </Select>
-            <ProductSelect label="Product Name" items={stockOutForm.category ? allProducts.filter((it) => it.category === stockOutForm.category) : allProducts} value={stockOutForm.productId} onChange={(id) => selectProduct(setStockOutForm, id)} />
+            <ProductSelect label="Product Name" items={stockOutForm.category ? allProducts.filter((it) => it.category?.toLowerCase() === stockOutForm.category.toLowerCase()) : allProducts} value={stockOutForm.productId} onChange={(id) => selectProduct(setStockOutForm, id)} />
             <Input label="Quantity Used" type="number" value={stockOutForm.quantity} onChange={(e) => setStockOutForm({ ...stockOutForm, quantity: Number(e.target.value) })} />
             <UnitSelect value={stockOutForm.unit} onChange={(unit) => setStockOutForm({ ...stockOutForm, unit })} />
             <Select label="Reason" value={stockOutForm.reason} onChange={(e) => setStockOutForm({ ...stockOutForm, reason: e.target.value })}>
@@ -639,7 +718,7 @@ export default function Inventory() {
             <Select label="Department" value={stockOutForm.department} onChange={(e) => setStockOutForm({ ...stockOutForm, department: e.target.value })}>
               {['Kitchen', 'Cafe', 'Store'].map((v) => <option key={v}>{v}</option>)}
             </Select>
-            <Input label="Date" type="date" value={stockOutForm.date} onChange={(e) => setStockOutForm({ ...stockOutForm, date: e.target.value })} />
+            <CalendarDatePicker label="Date" value={stockOutForm.date} onChange={(val) => setStockOutForm({ ...stockOutForm, date: val })} />
             <Input label="Approved By" value={stockOutForm.approvedBy} onChange={(e) => setStockOutForm({ ...stockOutForm, approvedBy: e.target.value })} />
           </FieldGrid>
         </MovementCard>
@@ -662,77 +741,167 @@ export default function Inventory() {
               <option value="Sauces">Sauces</option>
               <option value="Syrups">Syrups</option>
             </Select>
-            <ProductSelect label="Product Name" items={wasteForm.category ? allProducts.filter((it) => it.category === wasteForm.category) : allProducts} value={wasteForm.productId} onChange={(id) => selectProduct(setWasteForm, id)} />
+            <ProductSelect label="Product Name" items={wasteForm.category ? allProducts.filter((it) => it.category?.toLowerCase() === wasteForm.category.toLowerCase()) : allProducts} value={wasteForm.productId} onChange={(id) => selectProduct(setWasteForm, id)} />
             <Input label="Quantity" type="number" value={wasteForm.quantity} onChange={(e) => setWasteForm({ ...wasteForm, quantity: Number(e.target.value) })} />
             <UnitSelect value={wasteForm.unit} onChange={(unit) => setWasteForm({ ...wasteForm, unit })} />
             <Select label="Reason" value={wasteForm.reason} onChange={(e) => setWasteForm({ ...wasteForm, reason: e.target.value })}>
               {['Expired', 'Spilled', 'Burnt', 'Broken'].map((v) => <option key={v}>{v}</option>)}
             </Select>
-            <Input label="Date" type="date" value={wasteForm.date} onChange={(e) => setWasteForm({ ...wasteForm, date: e.target.value })} />
+            <CalendarDatePicker label="Date" value={wasteForm.date} onChange={(val) => setWasteForm({ ...wasteForm, date: val })} />
             <Input label="Staff Name" value={wasteForm.staffName} onChange={(e) => setWasteForm({ ...wasteForm, staffName: e.target.value })} />
           </FieldGrid>
         </MovementCard>
       )}
 
       {active === 'Recipes' && (
-        <Card className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[180px_1fr_auto] lg:items-end">
-            <Select label="Menu Category" value={recipeMenuCategory} onChange={(e) => { setRecipeMenuCategory(e.target.value); setRecipeMenuId('') }}>
-              <option value="">Select category</option>
-              <option value="Pizza">Pizza</option>
-              <option value="Burger">Burger</option>
-              <option value="Fries">Fries</option>
-              <option value="Sandwich">Sandwich</option>
-              <option value="Pasta">Pasta</option>
-              <option value="Drinks">Drinks</option>
-              <option value="Dessert">Dessert</option>
-            </Select>
-            <Select label="Menu Item" value={recipeMenuId} onChange={(e) => setRecipeMenuId(e.target.value)}>
-              <option value="">Select menu item</option>
-              {recipeMenuCategory ? menuItems.filter((item) => item.category === recipeMenuCategory).map((item) => <option key={item._id} value={item._id}>{item.name}</option>) : menuItems.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
-            </Select>
-            <Button onClick={() => setRecipeRows((rows) => [...rows, { category: '', inventoryItem: '', quantity: 1, unit: 'PCS' }])}><FiPlus /> Ingredient</Button>
+        <Card className="space-y-4 overflow-hidden">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-heading text-lg font-semibold text-nb-white">Recipe Management</h2>
+            </div>
+            <Button
+              fullWidth
+              className="sm:w-auto"
+              onClick={() => {
+                setNewRecipeForm({ menuCategory: '', menuItem: '', ingredients: [] })
+                setNewRecipeModal({ open: true })
+              }}
+            >
+              <FiPlus /> New Recipe
+            </Button>
           </div>
-          <div className="space-y-3">
-            {recipeRows.map((row, idx) => (
-              <div key={idx} className="grid gap-3 rounded-xl border border-white/10 bg-black/20 p-3 md:grid-cols-[180px_1fr_140px_140px_44px]">
-                <Select label="Category" value={row.category} onChange={(e) => { setRecipeRows((rows) => rows.map((r, i) => i === idx ? { ...r, category: e.target.value, inventoryItem: '' } : r)) }}>
-                  <option value="">Select category</option>
-                  <option value="Frozen">Frozen</option>
-                  <option value="Vegetables">Vegetables</option>
-                  <option value="Cooking Material">Cooking Material</option>
-                  <option value="Packaging">Packaging</option>
-                  <option value="Cleaning material">Cleaning material</option>
-                  <option value="Stationary">Stationary</option>
-                  <option value="Masala">Masala</option>
-                  <option value="Breads">Breads</option>
-                  <option value="Cold drinks">Cold drinks</option>
-                  <option value="Sauces">Sauces</option>
-                  <option value="Syrups">Syrups</option>
-                </Select>
-                <ProductSelect label="Ingredient" items={row.category ? allProducts.filter((it) => it.category === row.category) : allProducts} value={row.inventoryItem} onChange={(id) => {
-                  const item = allProducts.find((it) => it._id === id)
-                  setRecipeRows((rows) => rows.map((r, i) => i === idx ? { ...r, inventoryItem: id, unit: item?.unit || r.unit } : r))
-                }} />
-                <Input label="Qty per order" type="number" value={row.quantity} onChange={(e) => setRecipeRows((rows) => rows.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r))} />
-                <UnitSelect value={row.unit} onChange={(unit) => setRecipeRows((rows) => rows.map((r, i) => i === idx ? { ...r, unit } : r))} />
-                <Button variant="danger" size="sm" className="self-end" onClick={() => setRecipeRows((rows) => rows.filter((_, i) => i !== idx))}><FiTrash2 /></Button>
+
+          {recipeItems.length > 0 ? (
+            <div className="space-y-3">
+              <div className="space-y-3 md:hidden">
+                {recipeItems.map((item) => {
+                  const itemCategory = typeof item.category === 'object' ? item.category?.name || item.category?._id : item.category
+                  return (
+                    <div key={item._id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="break-words font-medium text-nb-white">{item.name}</p>
+                          <p className="mt-1 text-xs text-nb-gray">{itemCategory || 'N/A'}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => {
+                            const currentCategory = typeof item.category === 'object' ? item.category?.name || item.category?._id : item.category
+                            setNewRecipeForm({
+                              menuCategory: currentCategory || '',
+                              menuItem: item._id,
+                              ingredients: (item.recipe || []).map((ing) => {
+                                const product = resolveInventoryProduct(ing.inventoryItem, allProducts)
+                                return {
+                                  inventoryItem: inventoryItemId(ing.inventoryItem),
+                                  quantity: ing.quantity,
+                                  unit: ing.unit,
+                                  category: inventoryProductCategory(product) || ing.category || '',
+                                }
+                              }),
+                            })
+                            setNewRecipeModal({ open: true })
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                      <div className="mt-3 space-y-2 border-t border-white/5 pt-3">
+                        {item.recipe.map((ing, idx) => {
+                          const product = resolveInventoryProduct(ing.inventoryItem, allProducts)
+                          return (
+                            <div key={idx} className="rounded-xl bg-white/[0.03] px-3 py-2">
+                              <p className="break-words text-sm text-nb-white">{product?.name || 'Unknown'}</p>
+                              <p className="text-xs text-nb-gray">{ing.quantity} {ing.unit}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-            {!recipeRows.length && <p className="py-8 text-center text-sm text-nb-gray">No ingredients mapped yet.</p>}
-          </div>
-          <Button onClick={saveRecipe}>Save Recipe Mapping</Button>
+
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10 text-left">
+                      <th className="pb-2 pl-2 font-medium text-nb-gray">Menu Item</th>
+                      <th className="pb-2 pl-2 font-medium text-nb-gray">Category</th>
+                      <th className="pb-2 pl-2 font-medium text-nb-gray">Ingredients</th>
+                      <th className="pb-2 pl-2 font-medium text-nb-gray">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recipeItems.map((item) => {
+                      const itemCategory = typeof item.category === 'object' ? item.category?.name || item.category?._id : item.category
+                      return (
+                        <tr key={item._id} className="border-b border-white/5">
+                          <td className="py-3 pl-2 font-medium text-nb-white">{item.name}</td>
+                          <td className="py-3 pl-2 text-nb-gray">{itemCategory || 'N/A'}</td>
+                          <td className="py-3 pl-2 text-nb-gray">
+                            {item.recipe.map((ing, idx) => {
+                              const product = resolveInventoryProduct(ing.inventoryItem, allProducts)
+                              return (
+                                <div key={idx} className="text-xs">
+                                  {product?.name || 'Unknown'} - {ing.quantity} {ing.unit}
+                                </div>
+                              )
+                            })}
+                          </td>
+                          <td className="py-3 pl-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const currentCategory = typeof item.category === 'object' ? item.category?.name || item.category?._id : item.category
+                                setNewRecipeForm({
+                                  menuCategory: currentCategory || '',
+                                  menuItem: item._id,
+                                  ingredients: (item.recipe || []).map((ing) => {
+                                    const product = resolveInventoryProduct(ing.inventoryItem, allProducts)
+                                    return {
+                                      inventoryItem: inventoryItemId(ing.inventoryItem),
+                                      quantity: ing.quantity,
+                                      unit: ing.unit,
+                                      category: inventoryProductCategory(product) || ing.category || '',
+                                    }
+                                  }),
+                                })
+                                setNewRecipeModal({ open: true })
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-nb-gray">No recipes saved</p>
+          )}
         </Card>
       )}
 
       {active === 'Closing' && (
         <Card className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <Input label="Date" type="date" value={closingForm.date} onChange={(e) => { setClosingForm({ ...closingForm, date: e.target.value }); refreshClosing(e.target.value) }} />
+            <Input label="Opening Stock" value={closingPreview?.openingStock || 0} disabled />
             <Input label="Total Stock In" value={closingPreview?.totalStockIn || 0} disabled />
             <Input label="Total Stock Out" value={closingPreview?.totalStockOut || 0} disabled />
             <Input label="Total Waste" value={closingPreview?.totalWaste || 0} disabled />
-            <Input label="Final Stock" value={closingPreview?.finalStock || 0} disabled />
+            <Input label="Calculated Closing" value={closingPreview?.calculatedClosing || 0} disabled />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Input label="Final Stock (Current)" value={closingPreview?.finalStock || 0} disabled />
+            <Input label="Inventory Value" value={money(closingPreview?.inventoryValue || 0)} disabled />
           </div>
           <TextArea label="Closing Notes" value={closingForm.notes} onChange={(e) => setClosingForm({ ...closingForm, notes: e.target.value })} />
           <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
@@ -743,121 +912,11 @@ export default function Inventory() {
             </label>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={closeDailyStock} disabled={Boolean(closingPreview?.closed)}>Close Daily Stock</Button>
+            <Button onClick={closeDailyStock} disabled={Boolean(closingPreview?.closed) || !closingForm.closedBy?.trim() || !closingForm.confirmed}>Close Daily Stock</Button>
             <Button variant="ghost" onClick={() => exportCsv('daily-closing-lines', closingPreview?.lines || [])}><FiDownload /> Excel</Button>
             <Button variant="ghost" onClick={exportPdf}><FiFileText /> PDF</Button>
           </div>
         </Card>
-      )}
-
-      {active === 'Reports' && (
-        <div className="space-y-4">
-          <Card className="grid gap-3 lg:grid-cols-[1fr_180px_180px_auto] lg:items-end">
-            <Input label="Start Date" type="date" value={reportDateRange.startDate} onChange={(e) => setReportDateRange({ ...reportDateRange, startDate: e.target.value })} />
-            <Input label="End Date" type="date" value={reportDateRange.endDate} onChange={(e) => setReportDateRange({ ...reportDateRange, endDate: e.target.value })} />
-            <Button onClick={loadReports}>Apply Filter</Button>
-            <Button variant="ghost" onClick={() => { setReportDateRange({ startDate: '', endDate: '' }); loadReports() }}>Clear</Button>
-          </Card>
-          
-          {reports?.summary && (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Stat label="Total Stock In Value" value={money(reports.summary.totalStockInValue)} tone="success" />
-              <Stat label="Total Stock Out" value={reports.summary.totalStockOut} />
-              <Stat label="Total Waste" value={reports.summary.totalWaste} tone="warning" />
-              <Stat label="Total Transactions" value={reports.summary.totalTransactions} />
-            </div>
-          )}
-
-          <Card>
-            <h2 className="mb-4 font-heading text-lg font-semibold">Stock In Report</h2>
-            <Table>
-              <thead>
-                <tr>
-                  <Th>Date</Th>
-                  <Th>Product</Th>
-                  <Th>Quantity</Th>
-                  <Th>Supplier</Th>
-                  <Th>Invoice</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports?.stockIn?.map((tx) => (
-                  <Tr key={tx._id}>
-                    <Td>{new Date(tx.date).toLocaleDateString()}</Td>
-                    <Td>{tx.productName}</Td>
-                    <Td>{tx.quantity} {tx.unit}</Td>
-                    <Td>{tx.supplierName || '-'}</Td>
-                    <Td>{tx.invoiceNumber || '-'}</Td>
-                  </Tr>
-                ))}
-                {!reports?.stockIn?.length && <tr><Td colSpan="5" className="py-8 text-center text-nb-gray">No stock in records found</Td></tr>}
-              </tbody>
-            </Table>
-          </Card>
-
-          <Card>
-            <h2 className="mb-4 font-heading text-lg font-semibold">Stock Out Report</h2>
-            <Table>
-              <thead>
-                <tr>
-                  <Th>Date</Th>
-                  <Th>Product</Th>
-                  <Th>Quantity</Th>
-                  <Th>Reason</Th>
-                  <Th>Department</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports?.stockOut?.map((tx) => (
-                  <Tr key={tx._id}>
-                    <Td>{new Date(tx.date).toLocaleDateString()}</Td>
-                    <Td>{tx.productName}</Td>
-                    <Td>{tx.quantity} {tx.unit}</Td>
-                    <Td>{tx.reason}</Td>
-                    <Td>{tx.department}</Td>
-                  </Tr>
-                ))}
-                {!reports?.stockOut?.length && <tr><Td colSpan="5" className="py-8 text-center text-nb-gray">No stock out records found</Td></tr>}
-              </tbody>
-            </Table>
-          </Card>
-
-          <Card>
-            <h2 className="mb-4 font-heading text-lg font-semibold">Waste Report</h2>
-            <Table>
-              <thead>
-                <tr>
-                  <Th>Date</Th>
-                  <Th>Product</Th>
-                  <Th>Quantity</Th>
-                  <Th>Reason</Th>
-                  <Th>Staff</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports?.waste?.map((tx) => (
-                  <Tr key={tx._id}>
-                    <Td>{new Date(tx.date).toLocaleDateString()}</Td>
-                    <Td>{tx.productName}</Td>
-                    <Td>{tx.quantity} {tx.unit}</Td>
-                    <Td>{tx.reason}</Td>
-                    <Td>{tx.staffName || '-'}</Td>
-                  </Tr>
-                ))}
-                {!reports?.waste?.length && <tr><Td colSpan="5" className="py-8 text-center text-nb-gray">No waste records found</Td></tr>}
-              </tbody>
-            </Table>
-          </Card>
-
-          <Card>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" onClick={() => exportCsv('stock-in-report', reports?.stockIn)}><FiDownload /> Stock In Excel</Button>
-              <Button variant="ghost" onClick={() => exportCsv('stock-out-report', reports?.stockOut)}><FiDownload /> Stock Out Excel</Button>
-              <Button variant="ghost" onClick={() => exportCsv('waste-report', reports?.waste)}><FiDownload /> Waste Excel</Button>
-              <Button variant="ghost" onClick={exportPdf}><FiFileText /> PDF</Button>
-            </div>
-          </Card>
-        </div>
       )}
 
       <Modal
@@ -951,6 +1010,181 @@ export default function Inventory() {
               Editing category will update all products currently assigned to "{categoryModal.editing}"
             </p>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={newRecipeModal.open}
+        onClose={() => setNewRecipeModal({ open: false })}
+        title={newRecipeForm.menuItem ? 'Edit Recipe' : 'New Recipe'}
+        wide
+        sheet
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setNewRecipeModal({ open: false })}>Cancel</Button>
+            <Button onClick={saveNewRecipe}>Save Recipe</Button>
+          </div>
+        }
+      >
+        <div className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Select
+              label="Menu Category"
+              value={newRecipeForm.menuCategory}
+              onChange={(e) => setNewRecipeForm({ ...newRecipeForm, menuCategory: e.target.value, menuItem: '', ingredients: [] })}
+            >
+              <option value="">Select category</option>
+              <option value="Pizza">Pizza</option>
+              <option value="Burger">Burger</option>
+              <option value="Fries">Fries</option>
+              <option value="Sandwich">Sandwich</option>
+              <option value="Pasta">Pasta</option>
+              <option value="Drinks">Drinks</option>
+              <option value="Dessert">Dessert</option>
+            </Select>
+            <Select
+              label="Menu Item"
+              value={newRecipeForm.menuItem}
+              onChange={(e) => setNewRecipeForm({ ...newRecipeForm, menuItem: e.target.value })}
+              disabled={!newRecipeForm.menuCategory}
+            >
+              <option value="">Select menu item</option>
+              {newRecipeForm.menuCategory ? menuItems.filter((item) => {
+                const itemCategory = typeof item.category === 'object' ? item.category?.name || item.category?._id : item.category
+                return itemCategory?.toLowerCase() === newRecipeForm.menuCategory.toLowerCase() || item._id === newRecipeForm.menuItem
+              }).map((item) => <option key={item._id} value={item._id}>{item.name}</option>) : menuItems.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+            </Select>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/20 p-4 sm:p-5">
+            <div className="mb-3 flex flex-col gap-1">
+              <h3 className="font-heading text-sm font-semibold text-nb-white">Ingredients</h3>
+              <p className="text-xs text-nb-gray">Add the ingredients used in this menu item.</p>
+            </div>
+
+            <div className="mb-3 grid gap-3 rounded-lg border border-white/10 bg-black/30 p-3 sm:grid-cols-2 lg:grid-cols-[180px_1fr_100px_80px_auto] lg:items-end">
+              <Select
+                label="Product Category"
+                value={newRecipeForm.tempCategory || ''}
+                onChange={(e) => setNewRecipeForm({ ...newRecipeForm, tempCategory: e.target.value })}
+              >
+                <option value="">Select category</option>
+                <option value="Frozen">Frozen</option>
+                <option value="Vegetables">Vegetables</option>
+                <option value="Cooking Material">Cooking Material</option>
+                <option value="Packaging">Packaging</option>
+                <option value="Cleaning material">Cleaning material</option>
+                <option value="Stationary">Stationary</option>
+                <option value="Masala">Masala</option>
+                <option value="Breads">Breads</option>
+                <option value="Cold drinks">Cold drinks</option>
+                <option value="Sauces">Sauces</option>
+                <option value="Syrups">Syrups</option>
+              </Select>
+              <Select
+                label="Product Name"
+                value={newRecipeForm.tempProduct || ''}
+                onChange={(e) => setNewRecipeForm({ ...newRecipeForm, tempProduct: e.target.value })}
+                disabled={!newRecipeForm.tempCategory}
+              >
+                <option value="">Select product</option>
+                {newRecipeForm.tempCategory ? allProducts.filter((it) => {
+                  const itemCategory = typeof it.category === 'object' ? it.category?.name || it.category?._id : it.category
+                  return itemCategory?.toLowerCase() === newRecipeForm.tempCategory.toLowerCase()
+                }).map((item) => <option key={item._id} value={item._id}>{item.name}</option>) : allProducts.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+              </Select>
+              <Input
+                label="Quantity"
+                type="number"
+                value={newRecipeForm.tempQuantity || ''}
+                onChange={(e) => setNewRecipeForm({ ...newRecipeForm, tempQuantity: Number(e.target.value) })}
+              />
+              <Select
+                label="Unit"
+                value={newRecipeForm.tempUnit || 'PCS'}
+                onChange={(e) => setNewRecipeForm({ ...newRecipeForm, tempUnit: e.target.value })}
+              >
+                {units.map((unit) => <option key={unit}>{unit}</option>)}
+              </Select>
+              <Button
+                fullWidth
+                className="lg:mt-[22px] lg:w-auto"
+                onClick={addIngredient}
+                disabled={!newRecipeForm.tempCategory || !newRecipeForm.tempProduct || !newRecipeForm.tempQuantity}
+              >
+                <FiPlus /> Add
+              </Button>
+            </div>
+
+            {newRecipeForm.ingredients.length > 0 && (
+              <div className="space-y-3">
+                <div className="space-y-2 md:hidden">
+                  {newRecipeForm.ingredients.map((ing, idx) => {
+                    const product = resolveInventoryProduct(ing.inventoryItem, allProducts)
+                    const productCategory = ing.category || inventoryProductCategory(product)
+                    const productName = product?.name || 'Unknown'
+                    return (
+                      <div key={idx} className="rounded-xl border border-white/10 bg-black/25 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="break-words text-sm font-medium text-nb-white">{productName}</p>
+                            <p className="break-words text-xs text-nb-gray">{productCategory || 'N/A'}</p>
+                          </div>
+                          <Button variant="danger" size="sm" className="shrink-0" onClick={() => removeIngredient(idx)}>
+                            <FiTrash2 />
+                          </Button>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-nb-gray">
+                          <div className="rounded-lg bg-white/[0.03] px-3 py-2">
+                            <span className="block text-[10px] uppercase tracking-wide">Quantity</span>
+                            <span className="text-nb-white">{ing.quantity}</span>
+                          </div>
+                          <div className="rounded-lg bg-white/[0.03] px-3 py-2">
+                            <span className="block text-[10px] uppercase tracking-wide">Unit</span>
+                            <span className="text-nb-white">{ing.unit}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[680px] text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 text-left">
+                        <th className="pb-2 pl-2 font-medium text-nb-gray">Product Category</th>
+                        <th className="pb-2 pl-2 font-medium text-nb-gray">Product Name</th>
+                        <th className="pb-2 pl-2 font-medium text-nb-gray">Quantity</th>
+                        <th className="pb-2 pl-2 font-medium text-nb-gray">Unit</th>
+                        <th className="pb-2 pl-2 font-medium text-nb-gray">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {newRecipeForm.ingredients && newRecipeForm.ingredients.length > 0 ? newRecipeForm.ingredients.map((ing, idx) => {
+                        const product = resolveInventoryProduct(ing.inventoryItem, allProducts)
+                        const productCategory = ing.category || inventoryProductCategory(product)
+                        const productName = product?.name || 'Unknown'
+                        return (
+                          <tr key={idx} className="border-b border-white/5">
+                            <td className="py-2 pl-2 text-nb-white">{productCategory || 'N/A'}</td>
+                            <td className="py-2 pl-2 text-nb-white">{productName}</td>
+                            <td className="py-2 pl-2 text-nb-white">{ing.quantity}</td>
+                            <td className="py-2 pl-2 text-nb-white">{ing.unit}</td>
+                            <td className="py-2 pl-2">
+                              <Button variant="danger" size="sm" onClick={() => removeIngredient(idx)}><FiTrash2 /></Button>
+                            </td>
+                          </tr>
+                        )
+                      }) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {!newRecipeForm.ingredients.length && <p className="py-4 text-center text-sm text-nb-gray">No ingredients added yet.</p>}
+          </div>
         </div>
       </Modal>
     </div>

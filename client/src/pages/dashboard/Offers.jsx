@@ -81,7 +81,6 @@ export default function Offers() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-nb-white">Offers & discounts</h1>
-          <p className="text-sm text-nb-gray">Campaign codes, happy-hour math, and promo windows.</p>
         </div>
         <Button onClick={openCreate}>New offer</Button>
       </div>

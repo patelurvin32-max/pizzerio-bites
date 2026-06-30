@@ -15,10 +15,12 @@ const inventoryClosingSchema = new mongoose.Schema(
   {
     dateKey: { type: String, required: true, unique: true },
     date: { type: Date, required: true },
+    openingStock: { type: Number, default: 0 },
     totalStockIn: { type: Number, default: 0 },
     totalStockOut: { type: Number, default: 0 },
     totalWaste: { type: Number, default: 0 },
     finalStock: { type: Number, default: 0 },
+    calculatedClosing: { type: Number, default: 0 },
     inventoryValue: { type: Number, default: 0 },
     notes: { type: String, default: '' },
     closedBy: { type: String, required: true },
